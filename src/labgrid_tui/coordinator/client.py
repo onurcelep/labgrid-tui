@@ -37,9 +37,7 @@ class CoordinatorError(Exception):
 class CoordinatorClient:
     def __init__(self, address: str) -> None:
         self.address = address
-        self.channel: grpc.aio.Channel = grpc.aio.insecure_channel(
-            address, options=CHANNEL_OPTIONS
-        )
+        self.channel: grpc.aio.Channel = grpc.aio.insecure_channel(address, options=CHANNEL_OPTIONS)
         # Generated pb2_grpc has no type stubs (no .pyi shipped), so its
         # __init__ is untyped from mypy's perspective.
         self._stub = pb2_grpc.CoordinatorStub(self.channel)  # type: ignore[no-untyped-call]

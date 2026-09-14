@@ -22,8 +22,13 @@ class _RecordingRunner:
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 async def _ready(app: LabgridTuiApp, pilot: object, n: int) -> DeviceTable:
@@ -80,8 +85,8 @@ async def test_bulk_release_skips_invalid(
     fake_coordinator: tuple[FakeCoordinator, str],
 ) -> None:
     servicer, address = fake_coordinator
-    servicer.places.append(pb2.Place(name="tb-a"))                      # free
-    servicer.places.append(pb2.Place(name="tb-b", acquired="x/y"))      # other user
+    servicer.places.append(pb2.Place(name="tb-a"))  # free
+    servicer.places.append(pb2.Place(name="tb-b", acquired="x/y"))  # other user
     app = LabgridTuiApp(_config(address))
     runner = _RecordingRunner()
     async with app.run_test() as pilot:
@@ -238,4 +243,5 @@ async def test_first_run_hints_once(
     import os
 
     from labgrid_tui.ui.uistate import load_state, state_path
+
     assert load_state(state_path(os.environ)).onboarded is True

@@ -56,9 +56,15 @@ def test_save_creates_parent_directory(tmp_path: Path) -> None:
 
 def test_save_is_atomic_no_leftover_tmp_file(tmp_path: Path) -> None:
     path = tmp_path / "coordinators.toml"
-    save_coordinators(path, Coordinators(current="a", entries={
-        "a": CoordinatorEntry(name="a", address="a.lab:1"),
-    }))
+    save_coordinators(
+        path,
+        Coordinators(
+            current="a",
+            entries={
+                "a": CoordinatorEntry(name="a", address="a.lab:1"),
+            },
+        ),
+    )
     leftovers = list(tmp_path.glob(".coordinators-*"))
     assert leftovers == []
     assert path.exists()
@@ -95,11 +101,7 @@ def test_unknown_keys_round_trip_through_edit_of_another_entry(tmp_path: Path) -
 
 def test_unknown_keys_survive_create_and_delete_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "coordinators.toml"
-    path.write_text(
-        "[coordinators.lab]\n"
-        'address = "lab.example:20408"\n'
-        'custom_field = "keepme"\n'
-    )
+    path.write_text('[coordinators.lab]\naddress = "lab.example:20408"\ncustom_field = "keepme"\n')
     coords = load_coordinators(path)
     # Create a new entry alongside "lab".
     coords.entries["home"] = CoordinatorEntry(name="home", address="127.0.0.1:20408")
@@ -123,7 +125,7 @@ def test_malformed_file_raises_coordinator_error(tmp_path: Path) -> None:
 
 def test_entry_without_address_is_skipped(tmp_path: Path) -> None:
     path = tmp_path / "coordinators.toml"
-    path.write_text("[coordinators.broken]\nprefix = \"x\"\n")
+    path.write_text('[coordinators.broken]\nprefix = "x"\n')
     coords = load_coordinators(path)
     assert coords.entries == {}
 
@@ -176,8 +178,9 @@ def test_validate_coordinator_rejects_bad_addresses(address: str) -> None:
 def _write_coordinators(path: Path, current: str | None, **entries: str) -> None:
     coords = Coordinators(
         current=current,
-        entries={name: CoordinatorEntry(name=name, address=address)
-                  for name, address in entries.items()},
+        entries={
+            name: CoordinatorEntry(name=name, address=address) for name, address in entries.items()
+        },
     )
     save_coordinators(path, coords)
 
@@ -185,9 +188,7 @@ def _write_coordinators(path: Path, current: str | None, **entries: str) -> None
 def test_flag_name_resolves_to_entry(tmp_path: Path) -> None:
     coordinators_path = tmp_path / "coordinators.toml"
     _write_coordinators(coordinators_path, None, lab="lab.example:20408")
-    config = load_config(
-        "lab", {}, tmp_path / "config.toml", coordinators_path=coordinators_path
-    )
+    config = load_config("lab", {}, tmp_path / "config.toml", coordinators_path=coordinators_path)
     assert config.coordinator == "lab.example:20408"
     assert config.coordinator_source == "coordinator lab"
 
@@ -216,7 +217,9 @@ def test_flag_bare_word_not_a_name_is_a_hostname(tmp_path: Path) -> None:
 def test_flag_bare_word_without_coordinators_file_behaves_as_before(tmp_path: Path) -> None:
     # No coordinators.toml at all: identical to pre-feature behaviour.
     config = load_config(
-        "myhost", {}, tmp_path / "config.toml",
+        "myhost",
+        {},
+        tmp_path / "config.toml",
         coordinators_path=tmp_path / "coordinators.toml",
     )
     assert config.coordinator == "myhost:20408"
@@ -227,7 +230,9 @@ def test_env_wins_over_current(tmp_path: Path) -> None:
     coordinators_path = tmp_path / "coordinators.toml"
     _write_coordinators(coordinators_path, "lab", lab="lab.example:20408")
     config = load_config(
-        None, {"LG_COORDINATOR": "env.lab:9"}, tmp_path / "config.toml",
+        None,
+        {"LG_COORDINATOR": "env.lab:9"},
+        tmp_path / "config.toml",
         coordinators_path=coordinators_path,
     )
     assert config.coordinator == "env.lab:9"
@@ -278,9 +283,7 @@ def test_config_coordinator_bare_word_not_a_name_is_a_hostname(tmp_path: Path) -
 def test_no_coordinators_file_no_behaviour_change(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('coordinator = "other.lab"\n')
-    config = load_config(
-        None, {}, config_path, coordinators_path=tmp_path / "coordinators.toml"
-    )
+    config = load_config(None, {}, config_path, coordinators_path=tmp_path / "coordinators.toml")
     assert config.coordinator == "other.lab:20408"
     assert config.coordinator_source == "config"
     assert config.config_error is None
@@ -312,8 +315,11 @@ def test_config_toml_prefix_wins_over_entry_prefix(tmp_path: Path) -> None:
         coordinators_path,
         Coordinators(
             current="lab",
-            entries={"lab": CoordinatorEntry(name="lab", address="lab.example:20408",
-                                              prefix="entry-prefix")},
+            entries={
+                "lab": CoordinatorEntry(
+                    name="lab", address="lab.example:20408", prefix="entry-prefix"
+                )
+            },
         ),
     )
     config_path = tmp_path / "config.toml"

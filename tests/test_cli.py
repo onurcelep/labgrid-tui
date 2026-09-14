@@ -166,9 +166,7 @@ def test_config_show_proxy_set(
     assert "proxy: LG_PROXY set (unsupported)" in out
 
 
-def test_config_init_creates_template(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_config_init_creates_template(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_path = tmp_path / "nested" / "config.toml"
     assert main(["--config", str(config_path), "config", "init"]) == 0
     assert config_path.exists()
@@ -177,11 +175,9 @@ def test_config_init_creates_template(
     assert "created" in out
 
 
-def test_config_init_refuses_overwrite(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_config_init_refuses_overwrite(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("prefix = \"kept\"\n")
+    config_path.write_text('prefix = "kept"\n')
     assert main(["--config", str(config_path), "config", "init"]) == 1
     out = capsys.readouterr().out
     assert str(config_path) in out
@@ -189,11 +185,9 @@ def test_config_init_refuses_overwrite(
     assert config_path.read_text() == 'prefix = "kept"\n'
 
 
-def test_config_init_force_overwrites(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_config_init_force_overwrites(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("prefix = \"kept\"\n")
+    config_path.write_text('prefix = "kept"\n')
     assert main(["--config", str(config_path), "config", "init", "--force"]) == 0
     assert config_path.read_text() != 'prefix = "kept"\n'
 
@@ -257,9 +251,19 @@ def test_coordinator_add_and_list(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_coordinator_add_writes_prefix(tmp_path: Path) -> None:
-    assert main([
-        "coordinator", "add", "lab", "lab.example:20408", "--prefix", "mycli",
-    ]) == 0
+    assert (
+        main(
+            [
+                "coordinator",
+                "add",
+                "lab",
+                "lab.example:20408",
+                "--prefix",
+                "mycli",
+            ]
+        )
+        == 0
+    )
     coordinators = load_coordinators(default_coordinators_path(os.environ))
     assert coordinators.entries["lab"].prefix == "mycli"
 
@@ -333,9 +337,20 @@ def test_coordinator_remove_unknown(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_coordinator_show_named(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main([
-        "coordinator", "add", "lab", "lab.example:20408", "--prefix", "mycli", "--use",
-    ]) == 0
+    assert (
+        main(
+            [
+                "coordinator",
+                "add",
+                "lab",
+                "lab.example:20408",
+                "--prefix",
+                "mycli",
+                "--use",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
     assert main(["coordinator", "show", "lab"]) == 0
     out = capsys.readouterr().out
@@ -384,9 +399,19 @@ def test_coordinator_edit_prefix() -> None:
 
 
 def test_coordinator_edit_no_prefix_clears_it() -> None:
-    assert main([
-        "coordinator", "add", "lab", "lab.example:20408", "--prefix", "mycli",
-    ]) == 0
+    assert (
+        main(
+            [
+                "coordinator",
+                "add",
+                "lab",
+                "lab.example:20408",
+                "--prefix",
+                "mycli",
+            ]
+        )
+        == 0
+    )
     assert main(["coordinator", "edit", "lab", "--no-prefix"]) == 0
     coordinators = load_coordinators(default_coordinators_path(os.environ))
     assert coordinators.entries["lab"].prefix is None
@@ -487,9 +512,7 @@ def test_pack_add_missing_file(tmp_path: Path, capsys: pytest.CaptureFixture[str
     assert "not found" in capsys.readouterr().err
 
 
-def test_pack_add_missing_pack_table(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_pack_add_missing_pack_table(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     pack_file = _write_pack(tmp_path, _NO_PACK_TABLE_TOML)
     assert main(["pack", "add", str(pack_file)]) == 1
     assert "[pack]" in capsys.readouterr().err
@@ -588,9 +611,7 @@ def test_pack_remove_deletes_a_url_packs_cache_file(
     assert not cache_path.exists()
 
 
-def test_pack_update_no_url_packs(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_pack_update_no_url_packs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     pack_file = _write_pack(tmp_path)
     assert main(["pack", "add", str(pack_file)]) == 0
     capsys.readouterr()
@@ -653,9 +674,7 @@ def test_pack_update_fetches_url_pack(
     assert Path(entry.cached).read_text().startswith("[pack]")
 
 
-def test_config_show_lists_packs(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_config_show_lists_packs(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     pack_file = _write_pack(tmp_path)
     assert main(["pack", "add", str(pack_file)]) == 0
     capsys.readouterr()

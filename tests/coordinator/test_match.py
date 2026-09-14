@@ -2,16 +2,35 @@ from labgrid_tui.coordinator.match import pattern_matches, resources_for_place
 from labgrid_tui.coordinator.models import Place, Resource, ResourceMatchPattern
 
 
-def _res(exporter: str = "exp1", group: str = "g1", name: str = "serial",
-         cls: str = "NetworkSerialPort") -> Resource:
-    return Resource(exporter=exporter, group=group, name=name, cls=cls,
-                    params={}, extra={}, acquired="", avail=True)
+def _res(
+    exporter: str = "exp1", group: str = "g1", name: str = "serial", cls: str = "NetworkSerialPort"
+) -> Resource:
+    return Resource(
+        exporter=exporter,
+        group=group,
+        name=name,
+        cls=cls,
+        params={},
+        extra={},
+        acquired="",
+        avail=True,
+    )
 
 
 def _place(*matches: ResourceMatchPattern) -> Place:
-    return Place(name="tb-1", aliases=(), comment="", tags={}, matches=tuple(matches),
-                 acquired=None, acquired_resources=(), allowed=(),
-                 created=0.0, changed=0.0, reservation=None)
+    return Place(
+        name="tb-1",
+        aliases=(),
+        comment="",
+        tags={},
+        matches=tuple(matches),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def test_exact_and_wildcard_components() -> None:

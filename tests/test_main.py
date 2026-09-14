@@ -5,9 +5,9 @@ import pytest
 from labgrid_tui.__main__ import main
 
 
-def test_lg_proxy_refused(monkeypatch: pytest.MonkeyPatch,
-                          capsys: pytest.CaptureFixture[str],
-                          tmp_path: Path) -> None:
+def test_lg_proxy_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     # Isolate from the developer's real config file: a stray config.toml
     # under their actual XDG_CONFIG_HOME must never influence this test.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))

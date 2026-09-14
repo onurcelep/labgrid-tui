@@ -20,8 +20,13 @@ from tests.fake_coordinator import FakeCoordinator
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 class _RecordingRunner:

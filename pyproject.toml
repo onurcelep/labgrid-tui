@@ -27,6 +27,7 @@ dev = [
     "grpcio-tools>=1.60",
     "types-protobuf",
     "grpc-stubs",
+    "pre-commit>=4.6.2",
 ]
 
 [build-system]

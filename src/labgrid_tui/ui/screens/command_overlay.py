@@ -27,10 +27,26 @@ from labgrid_tui.ui.clipboard import copy_via_suspend
 # that looks like text entry is forwarded to the filter input (see on_key).
 # ``q``/``c`` close the overlay so they must never reach the filter, even
 # though they are otherwise printable characters.
-_LIST_OWNED_KEYS = frozenset({
-    "up", "down", "left", "right", "enter", "y", "escape", "q", "c",
-    "shift+enter", "home", "end", "pageup", "pagedown", "tab", "shift+tab",
-})
+_LIST_OWNED_KEYS = frozenset(
+    {
+        "up",
+        "down",
+        "left",
+        "right",
+        "enter",
+        "y",
+        "escape",
+        "q",
+        "c",
+        "shift+enter",
+        "home",
+        "end",
+        "pageup",
+        "pagedown",
+        "tab",
+        "shift+tab",
+    }
+)
 
 
 def _slug(category: str) -> str:
@@ -155,9 +171,7 @@ class CommandOverlay(ModalScreen[None]):
     def on_mount(self) -> None:
         self._apply_filter("")
         if self._initial_category and self._initial_category in self._by_category:
-            self.query_one(TabbedContent).active = (
-                f"tab-{_slug(self._initial_category)}"
-            )
+            self.query_one(TabbedContent).active = f"tab-{_slug(self._initial_category)}"
         self._focus_active_list()
 
     # ------------------------------------------------------------------
@@ -188,9 +202,7 @@ class CommandOverlay(ModalScreen[None]):
     def action_prev_tab(self) -> None:
         self.query_one(TabbedContent).query_one(Tabs).action_previous_tab()
 
-    def on_tabbed_content_tab_activated(
-        self, event: TabbedContent.TabActivated
-    ) -> None:
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         # Focus follows the tab so up/down navigate the new list at once.
         self._focus_active_list()
 
@@ -217,7 +229,8 @@ class CommandOverlay(ModalScreen[None]):
         for category, entries in self._by_category.items():
             slug = _slug(category)
             visible = [
-                entry for entry in entries
+                entry
+                for entry in entries
                 if q in f"{entry.template.label} {entry.command_line}".lower()
             ]
             self._visible[slug] = visible
@@ -282,8 +295,10 @@ class CommandOverlay(ModalScreen[None]):
         self.dismiss()
 
     def _edit_widgets(self) -> tuple[Input, Static]:
-        return (self.query_one("#overlay-edit", Input),
-                self.query_one("#overlay-edit-hint", Static))
+        return (
+            self.query_one("#overlay-edit", Input),
+            self.query_one("#overlay-edit-hint", Static),
+        )
 
     def _editing(self) -> bool:
         return not self.query_one("#overlay-edit", Input).has_class("hidden")
@@ -297,8 +312,7 @@ class CommandOverlay(ModalScreen[None]):
         edit.value = entry.command_line
         hint_text = flags_hint(entry.template.cli_suffix)
         hint.update(
-            f"also accepts: {hint_text}" if hint_text else
-            "edit freely; enter copies, esc cancels"
+            f"also accepts: {hint_text}" if hint_text else "edit freely; enter copies, esc cancels"
         )
         edit.remove_class("hidden")
         hint.remove_class("hidden")

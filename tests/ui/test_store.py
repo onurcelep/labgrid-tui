@@ -11,14 +11,32 @@ from labgrid_tui.ui.store import FleetStore
 
 
 def _place(name: str = "tb-1") -> Place:
-    return Place(name=name, aliases=(), comment="", tags={}, matches=(),
-                 acquired=None, acquired_resources=(), allowed=(),
-                 created=0.0, changed=0.0, reservation=None)
+    return Place(
+        name=name,
+        aliases=(),
+        comment="",
+        tags={},
+        matches=(),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def _res(name: str = "r0") -> Resource:
-    return Resource(exporter="e", group="g", name=name, cls="NetworkSerialPort",
-                    params={}, extra={}, acquired="", avail=True)
+    return Resource(
+        exporter="e",
+        group="g",
+        name=name,
+        cls="NetworkSerialPort",
+        params={},
+        extra={},
+        acquired="",
+        avail=True,
+    )
 
 
 def test_apply_place_lifecycle() -> None:

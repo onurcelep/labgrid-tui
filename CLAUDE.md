@@ -43,4 +43,3 @@ belongs to this repo).
 - The coordinator client stays read-only: no gRPC mutations, never `PollReservation`.
 - Command pack entries are copy-only; the TUI never executes them.
 - Plain ASCII punctuation in prose (no dash-style `--`, em dashes, curly quotes).
-

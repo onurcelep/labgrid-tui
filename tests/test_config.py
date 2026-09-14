@@ -8,13 +8,15 @@ from labgrid_tui.coordinators import CoordinatorError
 
 def test_flag_wins() -> None:
     assert resolve_coordinator("coord.lab:1234", {"LG_COORDINATOR": "env.lab"}) == (
-        "coord.lab:1234", "flag",
+        "coord.lab:1234",
+        "flag",
     )
 
 
 def test_env_second() -> None:
     assert resolve_coordinator(None, {"LG_COORDINATOR": "env.lab:999"}) == (
-        "env.lab:999", "env",
+        "env.lab:999",
+        "env",
     )
 
 
@@ -25,7 +27,8 @@ def test_default_last() -> None:
 def test_default_port_appended() -> None:
     assert resolve_coordinator("coord.lab", {}) == ("coord.lab:20408", "flag")
     assert resolve_coordinator(None, {"LG_COORDINATOR": "env.lab"}) == (
-        "env.lab:20408", "env",
+        "env.lab:20408",
+        "env",
     )
 
 
@@ -68,13 +71,13 @@ def test_default_config_path_xdg() -> None:
 def test_command_templates_parsed(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        '[[commands]]\n'
+        "[[commands]]\n"
         'category = "Custom"\n'
         'label = "Ping DUT"\n'
         'suffix = "ssh -- ping -c1 10.0.0.1"\n'
         'class = "NetworkService"\n'
-        '\n'
-        '[[commands]]\n'
+        "\n"
+        "[[commands]]\n"
         'category = "Custom"\n'
         'label = "Monitor"\n'
         'suffix = "monitor"\n'
@@ -143,9 +146,7 @@ def test_env_bare_host_gets_default_port() -> None:
 
 
 def test_env_invalid_port_falls_back_to_default(tmp_path: Path) -> None:
-    config = load_config(
-        None, {"LG_COORDINATOR": "host:notaport"}, tmp_path / "nope.toml"
-    )
+    config = load_config(None, {"LG_COORDINATOR": "host:notaport"}, tmp_path / "nope.toml")
     assert config.coordinator == "127.0.0.1:20408"
     assert config.coordinator_source == "default"
     assert config.config_error is not None
@@ -186,10 +187,10 @@ def test_invalid_config_coordinator_wrong_type(tmp_path: Path) -> None:
 def test_malformed_command_entries_counted_not_crashed(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        '[[commands]]\n'
+        "[[commands]]\n"
         'label = "no category or suffix"\n'
-        '\n'
-        '[[commands]]\n'
+        "\n"
+        "[[commands]]\n"
         'category = "Ok"\n'
         'label = "Fine"\n'
         'suffix = "show"\n'

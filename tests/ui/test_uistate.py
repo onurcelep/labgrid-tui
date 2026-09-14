@@ -4,9 +4,7 @@ from labgrid_tui.ui.uistate import UiState, load_state, save_state, state_path
 
 
 def test_state_path_xdg() -> None:
-    assert state_path({"XDG_STATE_HOME": "/tmp/xs"}) == Path(
-        "/tmp/xs/labgrid-tui/ui.toml"
-    )
+    assert state_path({"XDG_STATE_HOME": "/tmp/xs"}) == Path("/tmp/xs/labgrid-tui/ui.toml")
 
 
 def test_roundtrip(tmp_path: Path) -> None:

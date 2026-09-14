@@ -37,9 +37,7 @@ class Config:
     config_error: str | None = None
     # [[commands]] entries: class-scoped templates keyed by resource class,
     # plus place-level templates (entries without a class).
-    command_templates: dict[str, tuple[CommandTemplate, ...]] = field(
-        default_factory=dict
-    )
+    command_templates: dict[str, tuple[CommandTemplate, ...]] = field(default_factory=dict)
     place_templates: tuple[CommandTemplate, ...] = ()
     # A named coordinator's own prefix, when the active coordinator was
     # resolved via a name (see coordinators.find_entry). Only used when
@@ -118,13 +116,10 @@ def load_config(
         raw_caps = data.get("capabilities", {})
         if isinstance(raw_caps, dict):
             overrides = {str(k): str(v) for k, v in raw_caps.items()}
-        command_templates, place_templates, bad = _parse_commands(
-            data.get("commands", [])
-        )
+        command_templates, place_templates, bad = _parse_commands(data.get("commands", []))
         if bad:
             errors.append(
-                f"{bad} invalid [[commands]] entr" + ("y" if bad == 1 else "ies")
-                + " skipped"
+                f"{bad} invalid [[commands]] entr" + ("y" if bad == 1 else "ies") + " skipped"
             )
     except FileNotFoundError:
         pass
@@ -235,8 +230,7 @@ def _parse_commands(
         category = item.get("category")
         label = item.get("label")
         suffix = item.get("suffix")
-        if not (isinstance(category, str) and isinstance(label, str)
-                and isinstance(suffix, str)):
+        if not (isinstance(category, str) and isinstance(label, str) and isinstance(suffix, str)):
             bad += 1
             continue
         template = CommandTemplate(

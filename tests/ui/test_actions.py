@@ -9,10 +9,10 @@ from labgrid_tui.model.events import KIND_ERROR, KIND_NEUTRAL
 from labgrid_tui.ui.actions import CliActionRunner
 
 
-def _entry(*, needs_args: bool = False, interactive: bool = False,
-           state: EntryState = EntryState.RUNNABLE) -> CommandEntry:
-    template = CommandTemplate("T", "Test", "test", interactive=interactive,
-                               needs_args=needs_args)
+def _entry(
+    *, needs_args: bool = False, interactive: bool = False, state: EntryState = EntryState.RUNNABLE
+) -> CommandEntry:
+    template = CommandTemplate("T", "Test", "test", interactive=interactive, needs_args=needs_args)
     return CommandEntry(template, "labgrid-client -p tb-1 test", state, None)
 
 
@@ -70,8 +70,6 @@ def test_interactive_copies_with_notice(monkeypatch: pytest.MonkeyPatch) -> None
     assert rec.clipboard == ["labgrid-client -p tb-1 test"]
     assert any("another terminal" in n for n in rec.notified)
     assert rec.spawned == []
-
-
 
 
 def test_capture_spawns_worker(monkeypatch: pytest.MonkeyPatch) -> None:

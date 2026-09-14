@@ -151,6 +151,7 @@ store its own per-coordinator data there. This surface may change before
 
 ```
 uv sync
+uv run pre-commit install      # ruff check and format on every commit
 uv run ruff check src tests
 uv run mypy src
 uv run pytest                      # unit and UI tests, fake coordinator

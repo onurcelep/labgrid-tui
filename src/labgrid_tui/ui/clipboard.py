@@ -60,8 +60,7 @@ def copy_via_osc52(
     app.copy_to_clipboard(text)
     head = f"Copied: {label}" if label else "Copied"
     app.notify(
-        f"{head}\nIf paste comes back empty, press Shift+Enter to copy "
-        "via terminal selection.",
+        f"{head}\nIf paste comes back empty, press Shift+Enter to copy via terminal selection.",
         timeout=5,
     )
 

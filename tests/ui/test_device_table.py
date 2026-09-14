@@ -6,12 +6,26 @@ from labgrid_tui.ui.store import FleetStore
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 
 
-def _place(name: str, comment: str = "", acquired: str | None = None,
-           tags: dict[str, str] | None = None,
-           matches: tuple[ResourceMatchPattern, ...] = ()) -> Place:
-    return Place(name=name, aliases=(), comment=comment, tags=tags or {},
-                 matches=matches, acquired=acquired, acquired_resources=(), allowed=(),
-                 created=0.0, changed=0.0, reservation=None)
+def _place(
+    name: str,
+    comment: str = "",
+    acquired: str | None = None,
+    tags: dict[str, str] | None = None,
+    matches: tuple[ResourceMatchPattern, ...] = (),
+) -> Place:
+    return Place(
+        name=name,
+        aliases=(),
+        comment=comment,
+        tags=tags or {},
+        matches=matches,
+        acquired=acquired,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def _store(*places: Place) -> FleetStore:
@@ -41,8 +55,16 @@ async def test_rows_sorted_and_unknown_capability() -> None:
         _place("tb-b"),
         _place("tb-a", matches=(ResourceMatchPattern("*", "*", "*"),)),
     )
-    resource = Resource(exporter="e", group="g", name="r0", cls="Mystery",
-                        params={}, extra={}, acquired="", avail=True)
+    resource = Resource(
+        exporter="e",
+        group="g",
+        name="r0",
+        cls="Mystery",
+        params={},
+        extra={},
+        acquired="",
+        avail=True,
+    )
     store.resources[("e", "g", "r0")] = resource
     app = _Harness()
     async with app.run_test() as pilot:
@@ -92,10 +114,10 @@ async def test_filter_and_marks() -> None:
         table.refresh_rows(store, None)
         assert table.row_count == 2
         table.focus()
-        await pilot.press("space")           # mark cursor row (tb-a)
+        await pilot.press("space")  # mark cursor row (tb-a)
         assert table.marks == {"tb-a"}
         assert str(table.get_row_at(0)[0]) == "●"
-        await pilot.press("ctrl+a")          # mark all visible
+        await pilot.press("ctrl+a")  # mark all visible
         assert table.marks == {"tb-a", "tb-b"}
         assert table.selected_targets() == ["tb-a", "tb-b"]
         table.marks.clear()
@@ -110,12 +132,12 @@ async def test_marks_pruned_and_cursor_identity() -> None:
         table.refresh_rows(store, None)
         await pilot.pause()
         table.focus()
-        await pilot.press("down")            # cursor to tb-b
+        await pilot.press("down")  # cursor to tb-b
         table.marks.add("tb-a")
         store.places["tb-0"] = _place("tb-0")  # sorts first
         del store.places["tb-a"]
         table.refresh_rows(store, None)
-        assert table.marks == set()          # tb-a gone -> pruned
+        assert table.marks == set()  # tb-a gone -> pruned
         assert table.cursor_place() == "tb-b"  # identity, not index
 
 
@@ -171,9 +193,9 @@ async def test_ctrl_a_toggles_mark_all() -> None:
         table.refresh_rows(store, None)
         await pilot.pause()
         table.focus()
-        await pilot.press("ctrl+a")           # none marked -> mark all
+        await pilot.press("ctrl+a")  # none marked -> mark all
         assert table.marks == {"tb-a", "tb-b", "tb-c"}
-        await pilot.press("ctrl+a")           # all marked -> unmark all
+        await pilot.press("ctrl+a")  # all marked -> unmark all
         assert table.marks == set()
 
 
@@ -344,8 +366,14 @@ async def test_status_dot_is_red_and_dimmed_without_usable_resources() -> None:
     )
     for exporter, avail in (("down", False), ("e", True)):
         store.resources[(exporter, "g", "r")] = Resource(
-            exporter=exporter, group="g", name="r", cls="NetworkSerialPort",
-            params={}, extra={}, acquired="", avail=avail,
+            exporter=exporter,
+            group="g",
+            name="r",
+            cls="NetworkSerialPort",
+            params={},
+            extra={},
+            acquired="",
+            avail=avail,
         )
     app = _Harness()
     async with app.run_test() as pilot:

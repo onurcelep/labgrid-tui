@@ -88,7 +88,10 @@ class HelpOverlay(ModalScreen[None]):
                 id="help-title",
             )
             with TabbedContent(
-                "Key Bindings", "Operations", "Table Reference", "Activity Log",
+                "Key Bindings",
+                "Operations",
+                "Table Reference",
+                "Activity Log",
             ):
                 with TabPane("Key Bindings"), VerticalScroll():
                     yield Markdown(TAB_KEY_BINDINGS)

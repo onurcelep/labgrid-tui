@@ -12,11 +12,13 @@ class _Harness(App[None]):
         self.mood: str | None = "live"
 
     def compose(self) -> ComposeResult:
-        yield StatusBar([
-            Segment(lambda: "coord (env)"),
-            Segment(lambda: self.mood),
-            Segment(lambda: None),
-        ])
+        yield StatusBar(
+            [
+                Segment(lambda: "coord (env)"),
+                Segment(lambda: self.mood),
+                Segment(lambda: None),
+            ]
+        )
 
 
 async def test_segments_render_and_refresh() -> None:
@@ -38,11 +40,13 @@ def _raising_provider() -> str | None:
 
 class _RaisingHarness(App[None]):
     def compose(self) -> ComposeResult:
-        yield StatusBar([
-            Segment(lambda: "coord (env)"),
-            Segment(_raising_provider),
-            Segment(lambda: "live"),
-        ])
+        yield StatusBar(
+            [
+                Segment(lambda: "coord (env)"),
+                Segment(_raising_provider),
+                Segment(lambda: "live"),
+            ]
+        )
 
 
 async def test_raising_segment_provider_is_dropped_and_logged(

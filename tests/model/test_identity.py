@@ -12,9 +12,19 @@ from labgrid_tui.model.identity import (
 
 
 def _place(acquired: str | None = None, allowed: tuple[str, ...] = ()) -> Place:
-    return Place(name="tb-1", aliases=(), comment="", tags={}, matches=(),
-                 acquired=acquired, acquired_resources=(), allowed=allowed,
-                 created=0.0, changed=0.0, reservation=None)
+    return Place(
+        name="tb-1",
+        aliases=(),
+        comment="",
+        tags={},
+        matches=(),
+        acquired=acquired,
+        acquired_resources=(),
+        allowed=allowed,
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def test_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,8 +47,7 @@ def test_access_states() -> None:
     assert place_access(_place(acquired=None), me) is Access.NOT_ACQUIRED
     assert place_access(_place(acquired="laptop/alice"), me) is Access.USABLE
     assert (
-        place_access(_place(acquired="host2/bob", allowed=("laptop/alice",)), me)
-        is Access.USABLE
+        place_access(_place(acquired="host2/bob", allowed=("laptop/alice",)), me) is Access.USABLE
     )
     assert place_access(_place(acquired="host2/bob"), me) is Access.OTHER_USER
     assert place_access(_place(acquired="host2/alice"), me) is Access.OTHER_HOST

@@ -44,7 +44,7 @@ class PlaceholderContext:
 
 
 def _held_by_me(place: Place, me: str, reservations: list[Reservation] | None) -> bool:
-    """"held" per README.md (Command packs): acquired by me (or allowed), or the
+    """ "held" per README.md (Command packs): acquired by me (or allowed), or the
     place's reservation belongs to me: independent of that
     reservation's state (waiting/allocated), unlike the acquire gating in
     model/commands.py."""

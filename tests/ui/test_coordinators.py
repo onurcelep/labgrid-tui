@@ -27,8 +27,13 @@ from tests.fake_coordinator import FakeCoordinator, start_fake
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 def _write_coordinators(current: str | None, **entries: str) -> None:
@@ -451,7 +456,7 @@ async def test_palette_switch_entry_invokes_switch(
 async def test_palette_no_coordinators_offers_manage_but_no_switch(
     fake_coordinator: tuple[FakeCoordinator, str],
 ) -> None:
-    """"manage" is always offered (it's how you add the first one); with
+    """ "manage" is always offered (it's how you add the first one); with
     no entries there is nothing to switch to."""
     _, address = fake_coordinator
     app = LabgridTuiApp(_config(address))

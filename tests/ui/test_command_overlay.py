@@ -29,9 +29,13 @@ class _Runner:
         self.copied.append(entry)
 
 
-def _make(category: str, label: str, suffix: str,
-          state: EntryState = EntryState.RUNNABLE,
-          reason: str | None = None) -> CommandEntry:
+def _make(
+    category: str,
+    label: str,
+    suffix: str,
+    state: EntryState = EntryState.RUNNABLE,
+    reason: str | None = None,
+) -> CommandEntry:
     template = CommandTemplate(category, label, suffix)
     return CommandEntry(template, f"labgrid-client -p tb-1 {suffix}", state, reason)
 
@@ -39,8 +43,7 @@ def _make(category: str, label: str, suffix: str,
 def _entries() -> list[CommandEntry]:
     return [
         _make("Manage", "Show", "show"),
-        _make("Manage", "Release", "release", EntryState.UNAVAILABLE,
-              "requires acquire"),
+        _make("Manage", "Release", "release", EntryState.UNAVAILABLE, "requires acquire"),
         _make("Power", "Power on", "power on"),
         _make("Power", "Power off", "power off"),
         _make("Connect", "Console", "console"),
@@ -85,8 +88,7 @@ async def test_category_param_activates_tab() -> None:
     app = _Harness()
     runner = _Runner()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), runner,
-                                       category="Power"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), runner, category="Power"))
         await pilot.pause()
         assert app.screen.query_one(TabbedContent).active == "tab-power"
         await pilot.press("enter")
@@ -136,8 +138,7 @@ async def test_tab_shift_tab_switch_tabs_like_left_right() -> None:
 async def test_ctrl_n_moves_option_list_cursor_down() -> None:
     app = _Harness()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(),
-                                       category="Manage"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(), category="Manage"))
         await pilot.pause()
         options = app.screen.query_one("#overlay-list-manage", OptionList)
         assert options.option_count == 2
@@ -150,8 +151,7 @@ async def test_ctrl_n_moves_option_list_cursor_down() -> None:
 async def test_filter_narrows_within_tabs() -> None:
     app = _Harness()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(),
-                                       category="Power"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(), category="Power"))
         await pilot.pause()
         await pilot.press("o", "f", "f")
         await pilot.pause()
@@ -164,8 +164,7 @@ async def test_filter_narrows_within_tabs() -> None:
 async def test_enter_on_unavailable_copies() -> None:
     app = _Harness()
     runner = _Runner()
-    entries = [_make("Manage", "Release", "release", EntryState.UNAVAILABLE,
-                     "requires acquire")]
+    entries = [_make("Manage", "Release", "release", EntryState.UNAVAILABLE, "requires acquire")]
     async with app.run_test() as pilot:
         app.push_screen(CommandOverlay("tb-1", entries, runner))
         await pilot.pause()
@@ -179,8 +178,7 @@ async def test_y_copies_from_active_tab() -> None:
     app = _Harness()
     runner = _Runner()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), runner,
-                                       category="Connect"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), runner, category="Connect"))
         await pilot.pause()
         await pilot.press("y")
         await pilot.pause()
@@ -189,8 +187,10 @@ async def test_y_copies_from_active_tab() -> None:
 
 
 def _pack_entry(
-    label: str, command_line: str,
-    state: EntryState = EntryState.RUNNABLE, reason: str | None = None,
+    label: str,
+    command_line: str,
+    state: EntryState = EntryState.RUNNABLE,
+    reason: str | None = None,
 ) -> CommandEntry:
     template = CommandTemplate("robot", label, command_line, copy_only=True)
     return CommandEntry(template, command_line, state, reason)
@@ -217,8 +217,10 @@ async def test_pack_tab_appears_after_builtin_tabs_in_registration_order() -> No
 async def test_pack_entry_unavailable_shows_reason_and_struck_command() -> None:
     entries = [
         _pack_entry(
-            "Needs network", "robot -v IP:{res.NetworkService.address} tests/net",
-            EntryState.UNAVAILABLE, "needs NetworkService",
+            "Needs network",
+            "robot -v IP:{res.NetworkService.address} tests/net",
+            EntryState.UNAVAILABLE,
+            "needs NetworkService",
         ),
     ]
     app = _Harness()
@@ -291,8 +293,7 @@ async def test_shift_enter_copies_via_suspend(monkeypatch: pytest.MonkeyPatch) -
     )
     app = _Harness()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(),
-                                       category="Connect"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), _Runner(), category="Connect"))
         await pilot.pause()
         await pilot.press("shift+enter")
         await pilot.pause()
@@ -348,8 +349,7 @@ async def test_ctrl_e_edits_and_copies_edited_line() -> None:
     app = _Harness()
     runner = _Runner()
     async with app.run_test() as pilot:
-        app.push_screen(CommandOverlay("tb-1", _entries(), runner,
-                                       category="Power"))
+        app.push_screen(CommandOverlay("tb-1", _entries(), runner, category="Power"))
         await pilot.pause()
         await pilot.press("ctrl+e")
         await pilot.pause()
@@ -389,11 +389,12 @@ async def test_edited_placeholder_semantics_are_preserved_on_copy() -> None:
     now route through copy()."""
     app = _Harness()
     runner = _Runner()
-    template = CommandTemplate("Manage", "Allow user", "allow <host>/<user>",
-                               needs_args=True)
-    entries = [CommandEntry(template,
-                            "labgrid-client -p tb-1 allow <host>/<user>",
-                            EntryState.RUNNABLE, None)]
+    template = CommandTemplate("Manage", "Allow user", "allow <host>/<user>", needs_args=True)
+    entries = [
+        CommandEntry(
+            template, "labgrid-client -p tb-1 allow <host>/<user>", EntryState.RUNNABLE, None
+        )
+    ]
     async with app.run_test() as pilot:
         app.push_screen(CommandOverlay("tb-1", entries, runner))
         await pilot.pause()
@@ -427,8 +428,13 @@ async def test_edited_placeholder_semantics_are_preserved_on_copy() -> None:
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 async def _ready(app: LabgridTuiApp, pilot: object, n: int) -> DeviceTable:

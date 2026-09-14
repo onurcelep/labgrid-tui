@@ -43,8 +43,11 @@ def test_plugin_merge(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_broken_plugin_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
     good = types.SimpleNamespace(capabilities={"A": "a"})
-    _patch(monkeypatch, _FakeEntryPoint(RuntimeError("boom"), name="bad"),
-           _FakeEntryPoint(good, name="good"))
+    _patch(
+        monkeypatch,
+        _FakeEntryPoint(RuntimeError("boom"), name="bad"),
+        _FakeEntryPoint(good, name="good"),
+    )
     data = load_plugins()
     assert data.capabilities == {"A": "a"}
 
@@ -62,8 +65,7 @@ def test_plugin_commands_concat(monkeypatch: pytest.MonkeyPatch) -> None:
     plugin2 = types.SimpleNamespace(
         commands={"MyResource": [CommandTemplate("Power", "Boom", "boom")]}
     )
-    _patch(monkeypatch, _FakeEntryPoint(plugin1, name="p1"),
-           _FakeEntryPoint(plugin2, name="p2"))
+    _patch(monkeypatch, _FakeEntryPoint(plugin1, name="p1"), _FakeEntryPoint(plugin2, name="p2"))
     data = load_plugins()
     assert len(data.commands["MyResource"]) == 2
     assert data.commands["MyResource"][0].label == "Zap"
@@ -73,8 +75,7 @@ def test_plugin_commands_concat(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_broken_plugin_malformed_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     broken = types.SimpleNamespace(commands={"X": 42})
     good = types.SimpleNamespace(capabilities={"B": "b"})
-    _patch(monkeypatch, _FakeEntryPoint(broken, name="broken"),
-           _FakeEntryPoint(good, name="good"))
+    _patch(monkeypatch, _FakeEntryPoint(broken, name="broken"), _FakeEntryPoint(good, name="good"))
     data = load_plugins()
     assert data.capabilities == {"B": "b"}
     assert data.commands == {}
