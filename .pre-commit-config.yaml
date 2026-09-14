@@ -1,3 +1,5 @@
+# Licence texts are third-party files and must stay byte-identical.
+exclude: ^LICENSE\.labgrid$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

@@ -171,7 +171,8 @@ proto. Release: bump `version` in `pyproject.toml`, tag, `uv build`,
 
 ## License
 
-Apache-2.0. Copyright 2026 Onur Celep.
+Apache-2.0. Copyright 2026 Onur Celep. The package metadata declares
+`Apache-2.0 AND LGPL-2.1-or-later` because of the vendored labgrid file below.
 
 labgrid-tui does not include or import the labgrid Python package. It
 contains an unmodified copy of labgrid's coordinator protocol definition
