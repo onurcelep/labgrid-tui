@@ -1,0 +1,8 @@
+labgrid-coordinator.proto is an unmodified copy of the coordinator protocol
+definition from the labgrid project (https://github.com/labgrid-project/labgrid),
+taken from: 1627e7df508bc275400e35d3a315cbd1f792c888
+
+It is licensed under the GNU Lesser General Public License, version 2.1 or
+later; the licence text is in LICENSE.labgrid at the repository root. The
+gRPC stubs in ../stubs/ are generated from this file by scripts/generate-stubs.sh.
+The rest of labgrid-tui is licensed under Apache-2.0 (see LICENSE).

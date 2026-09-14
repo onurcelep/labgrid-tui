@@ -172,3 +172,10 @@ proto. Release: bump `version` in `pyproject.toml`, tag, `uv build`,
 ## License
 
 Apache-2.0. Copyright 2026 Onur Celep.
+
+labgrid-tui does not include or import the labgrid Python package. It
+contains an unmodified copy of labgrid's coordinator protocol definition
+(`labgrid-coordinator.proto`, LGPL-2.1-or-later, licence text in
+[LICENSE.labgrid](LICENSE.labgrid)) and gRPC stubs generated from it; it
+talks to a labgrid coordinator over the network and runs `labgrid-client`
+as a separate process.

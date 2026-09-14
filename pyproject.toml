@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Terminal dashboard for labgrid labs: live fleet view and discoverable labgrid-client commands. Independent, third-party project; not affiliated with labgrid."
 requires-python = ">=3.11"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "LICENSE.labgrid"]
 readme = "README.md"
 keywords = ["labgrid", "tui", "textual", "hardware-in-the-loop", "embedded"]
 classifiers = [
@@ -79,4 +79,4 @@ module = ["grpc", "grpc.*"]
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.sdist]
-only-include = ["src", "tests", "examples", "README.md", "LICENSE", "pyproject.toml"]
+only-include = ["src", "tests", "examples", "README.md", "LICENSE", "LICENSE.labgrid", "pyproject.toml"]
