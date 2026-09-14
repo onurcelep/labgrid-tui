@@ -237,6 +237,10 @@ class ScriptedFleet:
 
     def __init__(self, script: FleetScript, speed: float) -> None:
         self._script = script
+        # The CLI (--speed, see __main__.py's _positive_float) already
+        # rejects a non-positive value; this is only a backstop against a
+        # non-positive speed passed by an embedder, not a documented way to
+        # get the default.
         self._speed = speed if speed > 0 else 1.0
         self._stopped = asyncio.Event()
         self._start: float | None = None

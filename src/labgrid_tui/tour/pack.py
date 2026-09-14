@@ -26,6 +26,11 @@ requires = ["res.NetworkService", "held"]
 label = "Tag the run"
 command = "robot -v PLACE:{place} -v BOARD:{tag.board} tests/smoke"
 requires = ["tag.board"]
+
+[[commands]]
+label = "Wait for my reservation"
+command = "labgrid-client -x {coordinator} wait {token}"
+requires = ["held"]
 """
 
 

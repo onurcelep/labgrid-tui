@@ -9,7 +9,7 @@ one completion trigger several tour steps share.
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from labgrid_tui.model.commands import CommandEntry
+from labgrid_tui.model.commands import CommandEntry, EntryState
 from labgrid_tui.model.events import Kind
 from labgrid_tui.ui.actions import CliActionRunner
 
@@ -35,6 +35,12 @@ class TourActionRunner(CliActionRunner):
         self._on_copy = on_copy
 
     def run(self, entry: CommandEntry, *, notify_success: bool = True) -> None:
+        # Same RUNNABLE guard CliActionRunner.run enforces: dashboard verb
+        # dispatch already pre-filters to RUNNABLE entries, but run_entry
+        # (reachable from the command palette) does not, and this runner
+        # must never copy a greyed-out entry's unresolved command line.
+        if entry.state is not EntryState.RUNNABLE:
+            return
         self.copy(entry)
 
     def copy(self, entry: CommandEntry, note: str | None = None) -> None:

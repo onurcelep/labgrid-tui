@@ -17,6 +17,8 @@ import pytest
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.tour.app import TourApp
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
+from labgrid_tui.ui.screens.coordinator_edit import CoordinatorEditModal
+from labgrid_tui.ui.screens.coordinator_selector import CoordinatorSelector
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 from labgrid_tui.ui.widgets.tour_panel import TourPanel
 
@@ -71,6 +73,35 @@ async def test_n_skips_one_step_at_a_time() -> None:
             await pilot.press("n")
             await pilot.pause()
         assert panel.current_text.startswith("Done.")
+
+
+async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
+    """Regression: CoordinatorSelector binds its own "n" to "new
+    coordinator" (see coordinator_selector.py). Without priority=True on
+    the tour's binding, step 8's "n" (the hint TourPanel shows on every
+    step) would silently open that dialog instead of skipping.
+
+    Uses a much lower speed than SPEED: at SPEED, alice's scripted acquire
+    (design +4s) lands within the handful of key presses this test makes,
+    which would fold step 6 into the same "n" press as step 5 (see
+    TourController._advance's already-landed check) and throw off the
+    step count this test relies on.
+    """
+    app = TourApp(speed=5.0)
+    async with app.run_test(size=(120, 30)) as pilot:
+        assert await _wait_until(pilot, lambda: len(app.store.places) == 6)
+        panel = _panel(app)
+        for _ in range(7):
+            await pilot.press("n")
+            await pilot.pause()
+        assert panel.current_text.startswith("Step 8/8")
+
+        await pilot.press("P")
+        await pilot.pause()
+        assert isinstance(app.screen, CoordinatorSelector)
+        await pilot.press("n")
+        assert await _wait_until(pilot, lambda: panel.current_text.startswith("Done."))
+        assert not isinstance(app.screen, CoordinatorEditModal)
 
 
 async def test_full_step_sequence_advances_the_panel_by_keyboard_alone() -> None:

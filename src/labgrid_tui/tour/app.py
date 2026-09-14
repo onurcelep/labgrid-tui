@@ -77,7 +77,15 @@ class TourDashboardScreen(DashboardScreen):
 
 
 class TourApp(LabgridTuiApp):
-    BINDINGS = [*LabgridTuiApp.BINDINGS, Binding("n", "tour_skip", "Skip step", show=True)]
+    BINDINGS = [
+        *LabgridTuiApp.BINDINGS,
+        # priority=True: step 8 opens CoordinatorSelector, which binds "n"
+        # to "new coordinator" (see coordinator_selector.py); without
+        # priority, that screen-level binding would win and "skip" (which
+        # TourPanel advertises on every step) would silently do nothing
+        # while that modal is on top.
+        Binding("n", "tour_skip", "Skip step", show=True, priority=True),
+    ]
 
     def __init__(self, speed: float = 1.0) -> None:
         self._controller = TourController()
