@@ -1,0 +1,36 @@
+# Publishes to PyPI on version tags via trusted publishing (OIDC): no API
+# token is stored anywhere. Requires a one-time PyPI-side registration of
+# this repository and workflow as a (pending) trusted publisher for the
+# labgrid-tui project, environment "pypi". workflow_dispatch allows a run
+# against an existing tag: check the tag out with the ref input.
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

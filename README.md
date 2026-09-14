@@ -156,16 +156,20 @@ uv sync
 uv run pre-commit install      # ruff check and format on every commit
 uv run ruff check src tests
 uv run mypy src
-uv run pytest                      # unit and UI tests, fake coordinator
-uv run pytest -m integration       # real coordinator: LABGRID_TUI_TEST_COORDINATOR
+uv run pytest                  # unit and UI tests against a fake coordinator
 ```
 
-`tests/model` and `tests/coordinator` cover logic and the gRPC layer,
-`tests/ui` drives widgets through Textual's pilot, `tests/integration`
-needs a coordinator (`docker run -d -p 20408:20408 labgrid/coordinator`).
-`scripts/generate-stubs.sh` regenerates the gRPC stubs from the vendored
-proto. Release: bump `version` in `pyproject.toml`, tag, `uv build`,
-`uv publish`.
+- `tests/model` and `tests/coordinator`: pure logic and the gRPC layer.
+- `tests/ui`: widgets and screens, driven through Textual's pilot.
+- `tests/integration`: a real coordinator, excluded by default. Start one
+  with `docker run -d -p 20408:20408 labgrid/coordinator` and run
+  `uv run pytest -m integration` (`LABGRID_TUI_TEST_COORDINATOR` points
+  elsewhere).
+- `scripts/generate-stubs.sh` regenerates the gRPC stubs from the vendored
+  proto.
+
+Release: bump `version` in `pyproject.toml`, tag `vX.Y.Z`, push the tag.
+The publish workflow uploads to PyPI through trusted publishing.
 
 </details>
 
