@@ -122,6 +122,7 @@ TAB_OPERATIONS = """\
 | mark then verb | `space` marks rows across refresh; `r`/`shift+r` act on marks, else cursor row |
 | filter | `/` matches name, comment, tags, capability abbreviations, case-insensitive |
 | acquire/release | `r`/`shift+r` copy (or run) acquire/release; all-offline refuses acquire |
+| tour | `labgrid-tui tour` walks through this dashboard on fake data, no coordinator needed |
 
 ### acquire vs. reserve gating
 

@@ -682,3 +682,30 @@ def test_config_show_lists_packs(tmp_path: Path, capsys: pytest.CaptureFixture[s
     out = capsys.readouterr().out
     assert "packs:" in out
     assert "robot: 1 commands (ok)" in out
+
+
+# ---------------------------------------------------------------------
+# tour: argument parsing only. run_tour() itself drives a real Textual
+# app loop and is covered by tests/ui/test_tour.py and tests/tour/.
+# ---------------------------------------------------------------------
+
+
+def test_tour_help_documents_speed_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["tour", "--help"])
+    assert exc_info.value.code == 0
+    assert "--speed" in capsys.readouterr().out
+
+
+def test_tour_invokes_run_tour_with_parsed_speed(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[float] = []
+    monkeypatch.setattr("labgrid_tui.__main__.run_tour", calls.append)
+    assert main(["tour", "--speed", "2.5"]) == 0
+    assert calls == [2.5]
+
+
+def test_tour_default_speed_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[float] = []
+    monkeypatch.setattr("labgrid_tui.__main__.run_tour", calls.append)
+    assert main(["tour"]) == 0
+    assert calls == [1.0]

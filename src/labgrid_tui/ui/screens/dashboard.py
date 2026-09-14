@@ -60,6 +60,10 @@ _CONN_LABEL = {
     ConnState.DISCONNECTED: "reconnecting (data stale)",
 }
 
+# (event name, detail) -> the tour's step sequencer, e.g. ("detail_open",
+# place_name). See labgrid_tui.tour.steps.TourController.
+TourHook = Callable[[str, str], None]
+
 
 class DashboardScreen(Screen[None]):
     DEFAULT_CSS = """
@@ -104,7 +108,12 @@ class DashboardScreen(Screen[None]):
     ]
 
     def __init__(
-        self, runner: ActionRunner, ui_state: UiState, persist: Callable[[], None]
+        self,
+        runner: ActionRunner,
+        ui_state: UiState,
+        persist: Callable[[], None],
+        *,
+        tour_hook: TourHook | None = None,
     ) -> None:
         super().__init__()
         self._runner = runner
@@ -114,6 +123,11 @@ class DashboardScreen(Screen[None]):
         # otherwise call it up to 5x/s for a status segment that never
         # changes within a session.
         self._client_available = client_available()
+        # Set only by the built-in tour (labgrid_tui.tour): a tiny sideband
+        # so its step sequencer can observe dashboard actions (cursor,
+        # marks, detail, commands overlay) without this screen knowing
+        # anything about tour state.
+        self._tour_hook = tour_hook
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -278,7 +292,15 @@ class DashboardScreen(Screen[None]):
         if place_name is None:
             self.notify("no place under the cursor")
             return
-        self.app.push_screen(DetailOverlay(place_name, self._runner))
+        if self._tour_hook is not None:
+            self._tour_hook("detail_open", place_name)
+        self.app.push_screen(
+            DetailOverlay(place_name, self._runner), callback=self._on_detail_dismissed
+        )
+
+    def _on_detail_dismissed(self, _result: None) -> None:
+        if self._tour_hook is not None:
+            self._tour_hook("detail_close", "")
 
     def action_toggle_activity(self) -> None:
         log = self.query_one(ActivityLog)
@@ -304,6 +326,8 @@ class DashboardScreen(Screen[None]):
             self.notify("no place under the cursor")
             return
         entries = self._entries_for(place_name)
+        if self._tour_hook is not None:
+            self._tour_hook("commands_open", category or "")
         self.app.push_screen(
             CommandOverlay(
                 place_name,
@@ -468,6 +492,12 @@ class DashboardScreen(Screen[None]):
 
     def on_device_table_marks_changed(self, _message: DeviceTable.MarksChanged) -> None:
         self._refresh_status()
+        if self._tour_hook is not None:
+            self._tour_hook("marks_changed", "")
+
+    def on_device_table_cursor_changed(self, message: DeviceTable.CursorChanged) -> None:
+        if self._tour_hook is not None:
+            self._tour_hook("cursor_changed", message.place_name or "")
 
     def _refresh_status(self) -> None:
         # Same window as the DeviceTable guard in refresh_fleet: a message
@@ -570,7 +600,8 @@ class DashboardScreen(Screen[None]):
         coordinators.entries[name] = CoordinatorEntry(
             name=name, address=address, prefix=prefix, extra=extra
         )
-        save_coordinators(coordinators_path, coordinators)
+        if getattr(self.app, "persist_coordinators", True):
+            save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator {'updated' if editing else 'created'}: {name}")
         if editing is not None and editing == coordinators.current:
             # The active coordinator's own address/prefix may have just
@@ -591,5 +622,6 @@ class DashboardScreen(Screen[None]):
             self.notify("cannot delete the active coordinator", severity="warning")
             return
         coordinators.entries.pop(name, None)
-        save_coordinators(coordinators_path, coordinators)
+        if getattr(self.app, "persist_coordinators", True):
+            save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator deleted: {name}")
