@@ -149,6 +149,8 @@ store its own per-coordinator data there. This surface may change before
 <details>
 <summary><b>Development</b></summary>
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the gate to run before opening a PR.
+
 ```
 uv sync
 uv run pre-commit install      # ruff check and format on every commit
