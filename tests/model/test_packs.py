@@ -36,15 +36,27 @@ def _reservation(
     token: str, owner: str, state: ReservationState = ReservationState.allocated
 ) -> Reservation:
     return Reservation(
-        owner=owner, token=token, state=state, prio=0.0, filters={}, allocations={},
-        created=0.0, timeout=0.0,
+        owner=owner,
+        token=token,
+        state=state,
+        prio=0.0,
+        filters={},
+        allocations={},
+        created=0.0,
+        timeout=0.0,
     )
 
 
 def _res(cls: str, name: str = "r0", **params: object) -> Resource:
     return Resource(
-        exporter="e", group="g", name=name, cls=cls, params=params, extra={},
-        acquired="", avail=True,
+        exporter="e",
+        group="g",
+        name=name,
+        cls=cls,
+        params=params,
+        extra={},
+        acquired="",
+        avail=True,
     )
 
 
@@ -66,7 +78,8 @@ def test_category_is_pack_name_and_entries_are_copy_only() -> None:
 def test_res_placeholder_resolves_from_matched_resource() -> None:
     pack = _pack(
         PackCommandTemplate(
-            label="SSH", command="ssh {res.NetworkService.address}",
+            label="SSH",
+            command="ssh {res.NetworkService.address}",
             requires=frozenset({"res.NetworkService"}),
         )
     )
@@ -77,9 +90,7 @@ def test_res_placeholder_resolves_from_matched_resource() -> None:
 
 
 def test_res_placeholder_unresolved_without_matching_resource() -> None:
-    pack = _pack(
-        PackCommandTemplate(label="SSH", command="ssh {res.NetworkService.address}")
-    )
+    pack = _pack(PackCommandTemplate(label="SSH", command="ssh {res.NetworkService.address}"))
     entries = evaluate_pack(pack, _place(), [], ME, [], COORDINATOR, PREFIX)
     assert entries[0].state is EntryState.UNAVAILABLE
     assert entries[0].reason == "needs NetworkService"
@@ -91,7 +102,8 @@ def test_res_placeholder_unresolved_without_matching_resource() -> None:
 def test_requires_res_gates_independent_of_placeholder_use() -> None:
     pack = _pack(
         PackCommandTemplate(
-            label="Full suite", command="robot tests/",
+            label="Full suite",
+            command="robot tests/",
             requires=frozenset({"res.NetworkService"}),
         )
     )

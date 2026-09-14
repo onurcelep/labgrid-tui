@@ -16,8 +16,13 @@ from tests.fake_coordinator import FakeCoordinator
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 def _serial(exporter: str = "exp1") -> pb2.Resource:
@@ -46,8 +51,7 @@ async def test_detail_shows_place_info(
     fake_coordinator: tuple[FakeCoordinator, str],
 ) -> None:
     servicer, address = fake_coordinator
-    place = pb2.Place(name="tb-1", comment="bench one",
-                      tags={"env": "dev"}, acquired="host/alice")
+    place = pb2.Place(name="tb-1", comment="bench one", tags={"env": "dev"}, acquired="host/alice")
     place.matches.add(exporter="exp1", group="g1", cls="*")
     servicer.places.append(place)
     servicer.resources.append(_serial())
@@ -221,8 +225,7 @@ async def test_resource_status_semantics(
     servicer.places.append(place)
 
     def _res(name: str, avail: bool, acquired: str) -> pb2.Resource:
-        resource = pb2.Resource(cls="NetworkSerialPort", avail=avail,
-                                acquired=acquired)
+        resource = pb2.Resource(cls="NetworkSerialPort", avail=avail, acquired=acquired)
         resource.path.exporter_name = "exp1"
         resource.path.group_name = "g1"
         resource.path.resource_name = name

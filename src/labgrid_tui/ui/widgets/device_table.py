@@ -169,9 +169,11 @@ class DeviceTable(DataTable[str | Text]):
 
     def _build_columns(self, column_keys: tuple[str, ...], tag_keys: list[str]) -> None:
         self.clear(columns=True)
-        all_columns = _LEAD_COLUMNS + tuple(
-            (key.capitalize(), f"tag_{key}") for key in tag_keys
-        ) + _TRAIL_COLUMNS
+        all_columns = (
+            _LEAD_COLUMNS
+            + tuple((key.capitalize(), f"tag_{key}") for key in tag_keys)
+            + _TRAIL_COLUMNS
+        )
         columns = tuple((label, key) for label, key in all_columns if key in column_keys)
         self.add_columns(*columns)
         self._all_tag_keys = tag_keys
@@ -198,9 +200,11 @@ class DeviceTable(DataTable[str | Text]):
         rows: list[dict[str, str | Text]],
         available_width: int,
     ) -> tuple[str, ...]:
-        all_columns = _LEAD_COLUMNS + tuple(
-            (key.capitalize(), f"tag_{key}") for key in tag_keys
-        ) + _TRAIL_COLUMNS
+        all_columns = (
+            _LEAD_COLUMNS
+            + tuple((key.capitalize(), f"tag_{key}") for key in tag_keys)
+            + _TRAIL_COLUMNS
+        )
         content_width = {key: len(label) for label, key in all_columns}
         for row in rows:
             for key, cell in row.items():
@@ -451,8 +455,7 @@ class DeviceTable(DataTable[str | Text]):
         visible = {
             str(value)
             for row in range(self.row_count)
-            if (value := self.coordinate_to_cell_key(Coordinate(row, 0)).row_key.value)
-            is not None
+            if (value := self.coordinate_to_cell_key(Coordinate(row, 0)).row_key.value) is not None
         }
         if visible and visible <= self.marks:
             self.marks.clear()

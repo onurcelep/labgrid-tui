@@ -24,8 +24,13 @@ from tests.fake_coordinator import FakeCoordinator
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 class _RecordingRunner:
@@ -274,9 +279,7 @@ async def test_pack_load_error_shows_startup_toast_and_activity_line(
     _, address = fake_coordinator
     save_registry(
         default_packs_path(os.environ),
-        PackRegistry(
-            packs={"gone": PackRegistryEntry(name="gone", source="/no/such/robot.toml")}
-        ),
+        PackRegistry(packs={"gone": PackRegistryEntry(name="gone", source="/no/such/robot.toml")}),
     )
     app = LabgridTuiApp(_config(address))
     assert app.packs == []

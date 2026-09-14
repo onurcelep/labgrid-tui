@@ -135,18 +135,20 @@ def test_place_templates_exist() -> None:
 
 
 def _named_res(name: str, cls: str, avail: bool = True) -> Resource:
-    return Resource(exporter="e", group="g", name=name, cls=cls,
-                    params={}, extra={}, acquired="", avail=avail)
+    return Resource(
+        exporter="e", group="g", name=name, cls=cls, params={}, extra={}, acquired="", avail=avail
+    )
 
 
 def test_multiple_resources_get_per_resource_entries() -> None:
     place = _place(acquired=ME)
-    resources = [_named_res("dut-network", "NetworkService"),
-                 _named_res("gateway-network", "NetworkService", avail=False)]
+    resources = [
+        _named_res("dut-network", "NetworkService"),
+        _named_res("gateway-network", "NetworkService", avail=False),
+    ]
     entries = evaluate(place, resources, ME, PREFIX)
     ssh = [e for e in entries if e.template.label.startswith("SSH (")]
-    assert [e.template.label for e in ssh] == [
-        "SSH (dut-network)", "SSH (gateway-network)"]
+    assert [e.template.label for e in ssh] == ["SSH (dut-network)", "SSH (gateway-network)"]
     assert ssh[0].command_line.endswith("ssh -n dut-network")
     assert ssh[0].state is EntryState.RUNNABLE
     assert ssh[1].state is EntryState.UNAVAILABLE  # that resource is offline
@@ -163,14 +165,20 @@ def test_single_resource_stays_clean() -> None:
 
 def test_positional_name_style_for_console_and_io() -> None:
     place = _place(acquired=ME)
-    resources = [_named_res("dut-console", "NetworkSerialPort"),
-                 _named_res("gw-console", "NetworkSerialPort")]
+    resources = [
+        _named_res("dut-console", "NetworkSerialPort"),
+        _named_res("gw-console", "NetworkSerialPort"),
+    ]
     entries = evaluate(place, resources, ME, PREFIX)
     consoles = [e for e in entries if e.template.category == "Connect"]
     assert consoles[0].command_line.endswith("console dut-console")
 
-    ios = evaluate(place, [_named_res("r1", "NetworkSysfsGPIO"),
-                           _named_res("r2", "NetworkSysfsGPIO")], ME, PREFIX)
+    ios = evaluate(
+        place,
+        [_named_res("r1", "NetworkSysfsGPIO"), _named_res("r2", "NetworkSysfsGPIO")],
+        ME,
+        PREFIX,
+    )
     high = [e for e in ios if e.template.label.startswith("I/O set high")]
     assert high[0].command_line.endswith("io high r1")
     assert not high[0].template.needs_args  # concrete name: directly runnable
@@ -196,7 +204,8 @@ def test_free_place_hides_resource_commands() -> None:
     categories = {e.template.category for e in entries}
     assert categories == {"Manage", "Info"}
     assert [e.template.label for e in entries if e.template.category == "Manage"] == [
-        "Acquire", "Reserve (queue)",
+        "Acquire",
+        "Reserve (queue)",
     ]
 
 
@@ -210,9 +219,19 @@ def test_held_place_shows_resource_commands_and_manage() -> None:
 
 
 def test_reserved_place_counts_as_held() -> None:
-    place = Place(name="tb-1", aliases=(), comment="", tags={}, matches=(),
-                  acquired=None, acquired_resources=(), allowed=(),
-                  created=0.0, changed=0.0, reservation="TOK")
+    place = Place(
+        name="tb-1",
+        aliases=(),
+        comment="",
+        tags={},
+        matches=(),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation="TOK",
+    )
     entries = evaluate(place, [_res("NetworkPowerPort")], ME, PREFIX)
     assert any(e.template.label == "Power on" for e in entries)
 
@@ -296,9 +315,7 @@ def test_gating_reserved_by_me_waiting() -> None:
 
     cancel = next(e for e in entries if e.template.label == "Cancel reservation TOK")
     assert cancel.state is EntryState.RUNNABLE
-    acquire_token = next(
-        e for e in entries if e.template.label == "Acquire allocated place +TOK"
-    )
+    acquire_token = next(e for e in entries if e.template.label == "Acquire allocated place +TOK")
     assert acquire_token.state is EntryState.UNAVAILABLE
     assert acquire_token.reason == "waiting"
 
@@ -319,9 +336,7 @@ def test_gating_reserved_by_me_allocated() -> None:
     assert cancel.state is EntryState.RUNNABLE
     assert cancel.command_line == f"{PREFIX} cancel-reservation TOK"
 
-    acquire_token = next(
-        e for e in entries if e.template.label == "Acquire allocated place +TOK"
-    )
+    acquire_token = next(e for e in entries if e.template.label == "Acquire allocated place +TOK")
     assert acquire_token.state is EntryState.RUNNABLE
     assert acquire_token.command_line == f"{PREFIX} -p +TOK acquire"
 
@@ -350,7 +365,6 @@ def test_gating_allowed_but_not_mine_reserve_reason() -> None:
     assert reserve.reason == "usable via allow"
 
 
-
 def test_reservations_group_absent_without_my_reservations() -> None:
     entries = evaluate(_place(), [], ME, PREFIX, reservations=[])
     assert not any(e.template.category == "Reservations" for e in entries)
@@ -372,9 +386,17 @@ def test_reservation_entries_independent_of_place() -> None:
     not just the place the reservation is allocated to."""
     reservations = [_reservation("TOK", ME, ReservationState.allocated, place="tb-99")]
     other_place = Place(
-        name="tb-1", aliases=(), comment="", tags={}, matches=(),
-        acquired=None, acquired_resources=(), allowed=(),
-        created=0.0, changed=0.0, reservation=None,
+        name="tb-1",
+        aliases=(),
+        comment="",
+        tags={},
+        matches=(),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
     )
     entries = evaluate(other_place, [], ME, PREFIX, reservations=reservations)
     assert any(e.template.category == "Reservations" for e in entries)

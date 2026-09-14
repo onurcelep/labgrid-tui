@@ -87,7 +87,9 @@ def _common_parser() -> argparse.ArgumentParser:
     """
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
-        "-x", "--coordinator", metavar="HOST[:PORT]",
+        "-x",
+        "--coordinator",
+        metavar="HOST[:PORT]",
         # SUPPRESS, not the implicit None: argparse's subparser dispatch
         # parses each level into its own fresh namespace and then copies
         # every attribute onto the parent one, so a subparser-level default
@@ -101,7 +103,10 @@ def _common_parser() -> argparse.ArgumentParser:
         "then 127.0.0.1:20408)",
     )
     common.add_argument(
-        "--config", metavar="PATH", type=Path, default=argparse.SUPPRESS,
+        "--config",
+        metavar="PATH",
+        type=Path,
+        default=argparse.SUPPRESS,
         help="path to config.toml (default: $XDG_CONFIG_HOME/labgrid-tui/config.toml)",
     )
     return common
@@ -120,8 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
     config_sub.add_parser("path", help="print the config file path", parents=[common])
-    config_sub.add_parser("show", help="print the resolved configuration",
-                           parents=[common])
+    config_sub.add_parser("show", help="print the resolved configuration", parents=[common])
     init_parser = config_sub.add_parser(
         "init", help="create a template config file", parents=[common]
     )
@@ -130,18 +134,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     coordinator_parser = subparsers.add_parser(
-        "coordinator", help="manage named coordinators (coordinators.toml)",
+        "coordinator",
+        help="manage named coordinators (coordinators.toml)",
         parents=[common],
     )
-    coordinator_sub = coordinator_parser.add_subparsers(
-        dest="coordinator_command", required=True
-    )
-    coordinator_sub.add_parser("list", help="list configured coordinators",
-                                parents=[common])
+    coordinator_sub = coordinator_parser.add_subparsers(dest="coordinator_command", required=True)
+    coordinator_sub.add_parser("list", help="list configured coordinators", parents=[common])
 
-    add_parser = coordinator_sub.add_parser(
-        "add", help="add a coordinator", parents=[common]
-    )
+    add_parser = coordinator_sub.add_parser("add", help="add a coordinator", parents=[common])
     add_parser.add_argument("name")
     add_parser.add_argument("address", metavar="ADDRESS", help="host:port")
     add_parser.add_argument("--prefix", help="command-line prefix for this coordinator")
@@ -157,7 +157,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     remove_parser.add_argument("name")
     remove_parser.add_argument(
-        "--force", action="store_true",
+        "--force",
+        action="store_true",
         help="remove it even if it is the active coordinator (clears the active coordinator)",
     )
 
@@ -166,9 +167,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     show_coord_parser.add_argument("name", nargs="?")
 
-    edit_parser = coordinator_sub.add_parser(
-        "edit", help="edit a coordinator", parents=[common]
-    )
+    edit_parser = coordinator_sub.add_parser("edit", help="edit a coordinator", parents=[common])
     edit_parser.add_argument("name")
     edit_parser.add_argument("--address", help="new host:port")
     prefix_group = edit_parser.add_mutually_exclusive_group()
@@ -183,9 +182,7 @@ def _build_parser() -> argparse.ArgumentParser:
     pack_sub = pack_parser.add_subparsers(dest="pack_command", required=True)
     pack_sub.add_parser("list", help="list registered command packs", parents=[common])
 
-    pack_add_parser = pack_sub.add_parser(
-        "add", help="add a command pack", parents=[common]
-    )
+    pack_add_parser = pack_sub.add_parser("add", help="add a command pack", parents=[common])
     pack_add_parser.add_argument("source", metavar="PATH|URL")
     pack_add_parser.add_argument(
         "--name", help="registry name (default: the pack file's own [pack].name)"
@@ -240,9 +237,8 @@ def _cmd_config_show(
     else:
         print(f"prefix: {default_prefix(config.coordinator)} (default)")
     print(f"capabilities: {len(config.capability_overrides)} custom")
-    command_count = (
-        sum(len(templates) for templates in config.command_templates.values())
-        + len(config.place_templates)
+    command_count = sum(len(templates) for templates in config.command_templates.values()) + len(
+        config.place_templates
     )
     print(f"commands: {command_count} custom")
     if config.proxy_set:
@@ -443,9 +439,7 @@ def _cmd_pack_add(
         return 1
 
     try:
-        name = validate_pack_name(name_override) if name_override else validate_pack_name(
-            pack.name
-        )
+        name = validate_pack_name(name_override) if name_override else validate_pack_name(pack.name)
     except PackError as exc:
         print(str(exc), file=sys.stderr)
         return 2

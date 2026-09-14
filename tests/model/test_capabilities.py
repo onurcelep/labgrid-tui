@@ -3,8 +3,9 @@ from labgrid_tui.model.capabilities import capabilities_for, capability_of
 
 
 def _res(cls: str, name: str = "r0") -> Resource:
-    return Resource(exporter="e", group="g", name=name, cls=cls,
-                    params={}, extra={}, acquired="", avail=True)
+    return Resource(
+        exporter="e", group="g", name=name, cls=cls, params={}, extra={}, acquired="", avail=True
+    )
 
 
 def test_known_classes() -> None:

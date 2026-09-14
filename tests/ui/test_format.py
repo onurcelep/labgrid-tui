@@ -10,9 +10,19 @@ from labgrid_tui.ui.format import (
 
 
 def _place(name: str, tags: dict[str, str]) -> Place:
-    return Place(name=name, aliases=(), comment="", tags=tags, matches=(),
-                 acquired=None, acquired_resources=(), allowed=(),
-                 created=0.0, changed=0.0, reservation=None)
+    return Place(
+        name=name,
+        aliases=(),
+        comment="",
+        tags=tags,
+        matches=(),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def test_abbrev_known_and_fallback() -> None:
@@ -26,7 +36,7 @@ def test_chips_colors() -> None:
     chips = capability_chips({"console", "ssh"}, {"power"})
     assert isinstance(chips, Text)
     assert chips.plain == "SER PWR SSH"  # sorted by capability name
-    styles = {chips.plain[span.start:span.end]: str(span.style) for span in chips.spans}
+    styles = {chips.plain[span.start : span.end]: str(span.style) for span in chips.spans}
     assert styles["PWR"] == "red"
     assert styles["SER"] == "green"
     assert styles["SSH"] == "green"
@@ -55,5 +65,3 @@ def test_top_tag_keys_frequency_then_name() -> None:
     ]
     assert top_tag_keys(places, limit=3) == ["env", "site", "board"]
     assert top_tag_keys([], limit=3) == []
-
-

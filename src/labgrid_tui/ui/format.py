@@ -29,13 +29,12 @@ CAPABILITY_ABBREV: dict[str, str] = {
     "measure": "MEAS",
 }
 
+
 def abbrev(capability: str) -> str:
     return CAPABILITY_ABBREV.get(capability, capability.upper())
 
 
-def capability_chips(
-    online: set[str], offline: set[str], *, unknown: bool = False
-) -> Text | str:
+def capability_chips(online: set[str], offline: set[str], *, unknown: bool = False) -> Text | str:
     """Colored abbreviation chips: green online, red offline, yellow ?."""
     caps = sorted(online | offline)
     if not caps and not unknown:

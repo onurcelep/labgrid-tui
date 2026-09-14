@@ -21,8 +21,13 @@ SIZES = [(60, 12), (80, 24), (100, 50), (140, 45), (200, 60)]
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 async def _wait_places(app: LabgridTuiApp, pilot: object, n: int) -> None:
@@ -74,8 +79,14 @@ async def test_no_widget_region_exceeds_screen(
         await pilot.pause()
         screen_region = app.screen.region
         for selector in (
-            "#status-bar", "#filter-bar", "#main-row", "#fleet-table",
-            "#activity-log", "#too-small-notice", "Header", "Footer",
+            "#status-bar",
+            "#filter-bar",
+            "#main-row",
+            "#fleet-table",
+            "#activity-log",
+            "#too-small-notice",
+            "Header",
+            "Footer",
         ):
             widget = app.screen.query_one(selector)
             region = widget.region

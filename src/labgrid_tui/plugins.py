@@ -26,7 +26,6 @@ def load_plugins() -> PluginData:
             for cls_name, templates in getattr(module, "commands", {}).items():
                 commands[cls_name] = commands.get(cls_name, ()) + tuple(templates)
         except Exception:
-            logger.warning("plugin %s failed to load; skipping", entry_point.name,
-                           exc_info=True)
+            logger.warning("plugin %s failed to load; skipping", entry_point.name, exc_info=True)
             continue
     return PluginData(capabilities, commands)

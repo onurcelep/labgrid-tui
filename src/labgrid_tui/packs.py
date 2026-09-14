@@ -87,9 +87,7 @@ def default_pack_cache_dir(env: Mapping[str, str]) -> Path:
 def validate_pack_name(name: str) -> str:
     value = name.strip()
     if not value or value in _RESERVED_NAMES or not _NAME_RE.fullmatch(value):
-        raise PackError(
-            f"invalid pack name {name!r}: use letters, digits, '.', '_', '-'"
-        )
+        raise PackError(f"invalid pack name {name!r}: use letters, digits, '.', '_', '-'")
     return value
 
 

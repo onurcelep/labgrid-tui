@@ -5,9 +5,19 @@ from labgrid_tui.ui.widgets.filter_bar import FilterBar, matches_filter
 
 
 def _place(name: str = "tb-1", comment: str = "", tags: dict[str, str] | None = None) -> Place:
-    return Place(name=name, aliases=(), comment=comment, tags=tags or {},
-                 matches=(), acquired=None, acquired_resources=(), allowed=(),
-                 created=0.0, changed=0.0, reservation=None)
+    return Place(
+        name=name,
+        aliases=(),
+        comment=comment,
+        tags=tags or {},
+        matches=(),
+        acquired=None,
+        acquired_resources=(),
+        allowed=(),
+        created=0.0,
+        changed=0.0,
+        reservation=None,
+    )
 
 
 def test_empty_query_matches() -> None:

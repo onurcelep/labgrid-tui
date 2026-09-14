@@ -326,9 +326,7 @@ def test_fetch_url_rejects_http_after_redirect(monkeypatch: pytest.MonkeyPatch) 
     302s to plain http must still be refused, not just the original URL."""
 
     def fake_urlopen(url: str, timeout: float | None = None) -> _FakeResponse:
-        return _FakeResponse(
-            b"[pack]\nname='x'\n", final_url="http://evil.example.org/robot.toml"
-        )
+        return _FakeResponse(b"[pack]\nname='x'\n", final_url="http://evil.example.org/robot.toml")
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     with pytest.raises(PackError, match="non-https"):
@@ -404,9 +402,7 @@ def test_registry_round_trip(tmp_path: Path) -> None:
 def test_registry_preserves_unknown_extra_keys(tmp_path: Path) -> None:
     path = tmp_path / "packs.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        '[[packs]]\nname = "robot"\nsource = "/x/robot.toml"\nauthor = "qa-team"\n'
-    )
+    path.write_text('[[packs]]\nname = "robot"\nsource = "/x/robot.toml"\nauthor = "qa-team"\n')
     registry = load_registry(path)
     assert registry.packs["robot"].extra == {"author": "qa-team"}
     save_registry(path, registry)

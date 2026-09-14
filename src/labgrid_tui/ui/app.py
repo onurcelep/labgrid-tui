@@ -138,13 +138,9 @@ class LabgridTuiApp(App[None]):
         # Command templates from plugins and config, merged per class
         # (config appends after plugins); place-level extras come from
         # config only. Screens read these instead of plugin_data directly.
-        self.command_extra: dict[str, tuple[CommandTemplate, ...]] = dict(
-            self.plugin_data.commands
-        )
+        self.command_extra: dict[str, tuple[CommandTemplate, ...]] = dict(self.plugin_data.commands)
         for cls_name, templates in config.command_templates.items():
-            self.command_extra[cls_name] = (
-                self.command_extra.get(cls_name, ()) + templates
-            )
+            self.command_extra[cls_name] = self.command_extra.get(cls_name, ()) + templates
         self.place_extra: tuple[CommandTemplate, ...] = config.place_templates
         self.packs_path = default_packs_path(os.environ)
         self.packs, self.pack_errors = self._load_packs()
@@ -315,8 +311,7 @@ class LabgridTuiApp(App[None]):
                     self._forward_to_overlay(event)
                 if not self._conn_timer_pending:
                     self._conn_timer_pending = True
-                    self.set_timer(CONNECTION_GRACE_SECONDS,
-                                    self._maybe_show_connection_overlay)
+                    self.set_timer(CONNECTION_GRACE_SECONDS, self._maybe_show_connection_overlay)
 
     def _dismiss_connection_overlays(self) -> None:
         # A screen pushed after the overlay (e.g. the built-in command

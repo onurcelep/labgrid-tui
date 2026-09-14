@@ -70,7 +70,8 @@ async def test_handshake_order_and_replay(
     assert PlaceChanged in kinds and ResourceChanged in kinds
     assert kinds.index(PlaceChanged) < len(kinds) - 1
     live_index = max(
-        i for i, e in enumerate(recorder.events)
+        i
+        for i, e in enumerate(recorder.events)
         if isinstance(e, ConnectionChanged) and e.state is ConnState.LIVE
     )
     assert all(

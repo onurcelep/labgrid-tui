@@ -15,8 +15,8 @@ class FakeCoordinator(pb2_grpc.CoordinatorServicer):
         self.places: list[pb2.Place] = []
         self.resources: list[pb2.Resource] = []
         self.reservations: list[pb2.Reservation] = []
-        self.fail_unary = False          # inject UNAVAILABLE on unary reads
-        self.drop_streams = False        # abort ClientStream sessions immediately
+        self.fail_unary = False  # inject UNAVAILABLE on unary reads
+        self.drop_streams = False  # abort ClientStream sessions immediately
         self.handshake_log: list[str] = []
         self.client_queues: list[asyncio.Queue[pb2.ClientOutMessage | None]] = []
 

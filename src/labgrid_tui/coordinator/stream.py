@@ -190,8 +190,6 @@ class EventStream:
             self._on_event(ResourceChanged(resource_from_pb2(update.resource)))
         elif kind == "del_resource":
             path = update.del_resource
-            self._on_event(
-                ResourceDeleted(path.exporter_name, path.group_name, path.resource_name)
-            )
+            self._on_event(ResourceDeleted(path.exporter_name, path.group_name, path.resource_name))
         else:
             logger.warning("unknown update kind from coordinator: %s", kind)

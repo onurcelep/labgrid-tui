@@ -99,8 +99,7 @@ class DetailOverlay(ModalScreen[None]):
             with VerticalScroll(id="detail-scroll"):
                 yield Static("", id="detail-body")
             yield Static(
-                "enter/y = copy | shift+enter = copy via select | "
-                "c = commands | esc = close",
+                "enter/y = copy | shift+enter = copy via select | c = commands | esc = close",
                 id="detail-hint",
             )
 
@@ -140,8 +139,7 @@ class DetailOverlay(ModalScreen[None]):
             if reservation.token == token:
                 marker = " (yours)" if reservation.owner == current_id() else ""
                 return (
-                    f"reservation {token} "
-                    f"({reservation.owner}, {reservation.state.name}){marker}"
+                    f"reservation {token} ({reservation.owner}, {reservation.state.name}){marker}"
                 )
         return f"reservation {token}"
 
@@ -210,11 +208,9 @@ class DetailOverlay(ModalScreen[None]):
         if caps:
             kv("Capabilities", ", ".join(f"{abbrev(c)}={c}" for c in caps))
         if offline:
-            kv("Offline", ", ".join(f"{abbrev(c)}={c}" for c in sorted(offline)),
-               value_style="red")
+            kv("Offline", ", ".join(f"{abbrev(c)}={c}" for c in sorted(offline)), value_style="red")
         if unknown:
-            kv("Unknown", f"{unknown} resource(s) of unrecognized class",
-               value_style="yellow")
+            kv("Unknown", f"{unknown} resource(s) of unrecognized class", value_style="yellow")
 
         # Tags and comment
         if place.tags:

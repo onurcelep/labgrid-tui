@@ -32,8 +32,13 @@ SIZES = [(60, 12), (80, 24), (100, 50), (140, 45), (200, 60)]
 
 
 def _config(address: str) -> Config:
-    return Config(coordinator=address, coordinator_source="flag", prefix=None,
-                  capability_overrides={}, proxy_set=False)
+    return Config(
+        coordinator=address,
+        coordinator_source="flag",
+        prefix=None,
+        capability_overrides={},
+        proxy_set=False,
+    )
 
 
 def _assert_fits(overlay: ModalScreen[object], modal_id: str) -> None:

@@ -235,18 +235,14 @@ def render_global(template: CommandTemplate, prefix: str) -> str:
     return f"{prefix} {template.cli_suffix}"
 
 
-def find_reservation(
-    token: str, reservations: list[Reservation] | None
-) -> Reservation | None:
+def find_reservation(token: str, reservations: list[Reservation] | None) -> Reservation | None:
     for reservation in reservations or ():
         if reservation.token == token:
             return reservation
     return None
 
 
-def _acquire_reason(
-    place: Place, me: str, reservations: list[Reservation] | None
-) -> str | None:
+def _acquire_reason(place: Place, me: str, reservations: list[Reservation] | None) -> str | None:
     """Mirrors the coordinator's AcquirePlace: refused outright once the
     place is acquired; refused with PERMISSION_DENIED when a reservation
     exists whose owner is not the caller; the owner's own acquire is
@@ -267,9 +263,7 @@ def _acquire_reason(
     return None
 
 
-def _reserve_reason(
-    place: Place, me: str, reservations: list[Reservation] | None
-) -> str | None:
+def _reserve_reason(place: Place, me: str, reservations: list[Reservation] | None) -> str | None:
     """Queueing only makes sense for a place someone else already holds or
     has reserved; the coordinator's `reserve` filters for any free place
     anyway, so a free one should acquire directly instead of queueing."""
@@ -348,9 +342,7 @@ def reservation_entries(
         )
         command_line = f"{prefix} -p +{token} acquire"
         if reservation.state is ReservationState.allocated:
-            entries.append(
-                CommandEntry(acquire_template, command_line, EntryState.RUNNABLE, None)
-            )
+            entries.append(CommandEntry(acquire_template, command_line, EntryState.RUNNABLE, None))
         else:
             entries.append(
                 CommandEntry(acquire_template, command_line, EntryState.UNAVAILABLE, "waiting")
