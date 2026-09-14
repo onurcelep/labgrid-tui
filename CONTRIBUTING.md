@@ -17,5 +17,6 @@ A human maintainer reviews and merges every change.
 
 Two hard rules for this project:
 
-- The coordinator client stays read only: no gRPC mutations, ever.
+- The coordinator client stays read only: no gRPC mutations, and never
+  `PollReservation` (it refreshes a reservation timeout, a write in disguise).
 - Command pack entries are copy only; the TUI never executes them.
