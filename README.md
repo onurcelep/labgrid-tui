@@ -41,8 +41,9 @@ either way and run in place only when it is present.
 ## Usage
 
 ```
-labgrid-tui config init     # optional: persist a coordinator address
-labgrid-tui                 # or: labgrid-tui -x coordinator.example.org:20408
+labgrid-tui tour             # guided walkthrough on fake data, no coordinator needed
+labgrid-tui config init      # optional: persist a coordinator address
+labgrid-tui                  # or: labgrid-tui -x coordinator.example.org:20408
 ```
 
 Press `?` in the dashboard for every key, the table legend and the
