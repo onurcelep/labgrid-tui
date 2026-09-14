@@ -9,8 +9,10 @@ uv run mypy src
 uv run pytest
 ```
 
-Keep one topic per PR. Include a short rationale in the description:
-what problem it solves and why this approach.
+Keep one topic per PR and one logical commit per change: pull requests
+are rebase-merged, so squash fixups on the branch before merging.
+Include a short rationale in the description: what problem it solves and
+why this approach.
 
 Automated review comments (CI bot, code review tools) are advisory only.
 A human maintainer reviews and merges every change.

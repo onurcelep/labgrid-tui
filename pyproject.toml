@@ -5,6 +5,20 @@ description = "Terminal dashboard for labgrid labs: live fleet view and discover
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+readme = "README.md"
+keywords = ["labgrid", "tui", "textual", "hardware-in-the-loop", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "textual>=8.2,<9",
     "grpcio>=1.60",
@@ -63,3 +77,6 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = ["grpc", "grpc.*"]
 ignore_missing_imports = true
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "examples", "README.md", "LICENSE", "pyproject.toml"]
