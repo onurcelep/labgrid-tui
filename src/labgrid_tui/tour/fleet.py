@@ -41,12 +41,17 @@ _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
     ("bench-06", "rpi4", "staging", "lab2", "Spare, no resources wired up yet"),
 )
 
-# Reservation tokens, fixed so Place.reservation and Reservation.token agree
-# from the very first frame: "mine" is present (waiting) from t=0, alice's
-# only appears once its own scripted offset is reached (see _lab_reservations_at).
+# Reservation queue on bench-04: alice arrives first and is allocated; mine
+# queues behind hers, waiting, until she releases it (dropped from the
+# coordinator's reservation list entirely, same as a real cancel-reservation
+# or expiry) and mine is promoted to allocated (see _lab_reservations_at).
+# Neither bench the tour ever tells the user to acquire (bench-01, bench-02)
+# carries a reservation, so Acquire is never gated there.
 _MY_TOKEN = "tour-mine-1"
 _ALICE_TOKEN = "tour-alice-1"
 _ALICE = "laptop/alice"
+_ALICE_ALLOCATED_AT = 8.0
+_ALICE_RELEASED_AT = 14.0
 
 
 def _place(
@@ -99,7 +104,11 @@ def _bench_resources(name: str, index: int) -> list[Resource]:
 
 def _bench_place(name: str) -> Place:
     _, board, env, site, comment = next(m for m in _BENCH_META if m[0] == name)
-    reservation = {"bench-02": _MY_TOKEN, "bench-04": _ALICE_TOKEN}.get(name)
+    # Static for the place's whole life: bench-04 is reserved throughout
+    # (the queue never empties), and my token is the one that ultimately
+    # gets fulfilled, per _lab_reservations_at. The other benches,
+    # including both the tour ever tells the user to acquire, carry none.
+    reservation = _MY_TOKEN if name == "bench-04" else None
     return _place(
         name,
         tags={"board": board, "env": env, "site": site},
@@ -146,26 +155,25 @@ def _reservation(
 
 
 def _lab_reservations_at(elapsed: float) -> list[Reservation]:
+    """The bench-04 queue: alice is allocated first (elapsed in
+    [_ALICE_ALLOCATED_AT, _ALICE_RELEASED_AT)); once she releases it, she
+    drops out of the list entirely and mine is allocated instead. Mine is
+    present, waiting, from t=0 so the Reservations tab always has content."""
     me = current_id()
-    mine_state = ReservationState.allocated if elapsed >= 10.0 else ReservationState.waiting
-    reservations = [
+    mine_allocated = elapsed >= _ALICE_RELEASED_AT
+    reservations: list[Reservation] = []
+    if _ALICE_ALLOCATED_AT <= elapsed < _ALICE_RELEASED_AT:
+        reservations.append(
+            _reservation(_ALICE, _ALICE_TOKEN, ReservationState.allocated, "bench-04")
+        )
+    reservations.append(
         _reservation(
             me,
             _MY_TOKEN,
-            mine_state,
-            "bench-02" if mine_state is ReservationState.allocated else None,
+            ReservationState.allocated if mine_allocated else ReservationState.waiting,
+            "bench-04" if mine_allocated else None,
         )
-    ]
-    if elapsed >= 8.0:
-        alice_state = ReservationState.allocated if elapsed >= 12.0 else ReservationState.waiting
-        reservations.append(
-            _reservation(
-                _ALICE,
-                _ALICE_TOKEN,
-                alice_state,
-                "bench-04" if alice_state is ReservationState.allocated else None,
-            )
-        )
+    )
     return reservations
 
 

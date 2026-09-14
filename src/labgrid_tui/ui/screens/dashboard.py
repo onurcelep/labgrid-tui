@@ -1,6 +1,7 @@
 """Composed verb-driven dashboard: fleet table, detail overlay, activity log."""
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
 from textual import events
 from textual.app import ComposeResult
@@ -53,6 +54,15 @@ from labgrid_tui.ui.widgets.status_bar import (
     Segment,
     StatusBar,
 )
+
+if TYPE_CHECKING:
+    # Only for the cast in _persist_coordinators below: importing
+    # LabgridTuiApp for real would be circular (app.py imports this
+    # module). The cast makes app.persist_coordinators a real,
+    # mypy --strict-checked attribute access instead of a getattr(...,
+    # default=True) that would silently re-enable writes if it were ever
+    # renamed on LabgridTuiApp without this call site following along.
+    from labgrid_tui.ui.app import LabgridTuiApp
 
 _CONN_LABEL = {
     ConnState.CONNECTING: "connecting...",
@@ -571,6 +581,9 @@ class DashboardScreen(Screen[None]):
             callback=lambda values: self._on_coordinator_edit_result(name, values),
         )
 
+    def _persist_coordinators(self) -> bool:
+        return cast("LabgridTuiApp", self.app).persist_coordinators
+
     def _on_coordinator_edit_result(
         self, editing: str | None, values: dict[str, str] | None
     ) -> None:
@@ -598,7 +611,7 @@ class DashboardScreen(Screen[None]):
         coordinators.entries[name] = CoordinatorEntry(
             name=name, address=address, prefix=prefix, extra=extra
         )
-        if getattr(self.app, "persist_coordinators", True):
+        if self._persist_coordinators():
             save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator {'updated' if editing else 'created'}: {name}")
         if editing is not None and editing == coordinators.current:
@@ -620,6 +633,6 @@ class DashboardScreen(Screen[None]):
             self.notify("cannot delete the active coordinator", severity="warning")
             return
         coordinators.entries.pop(name, None)
-        if getattr(self.app, "persist_coordinators", True):
+        if self._persist_coordinators():
             save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator deleted: {name}")

@@ -127,7 +127,12 @@ async def test_bench_05_serial_goes_offline_then_online() -> None:
         await _stop(fleet, task)
 
 
-async def test_get_reservations_reflects_scripted_state_transitions() -> None:
+async def test_get_reservations_reflects_a_realistic_queue_on_bench_04() -> None:
+    """alice is allocated first; mine queues behind her, waiting; once she
+    releases it (dropped from the list entirely, not left in some
+    "released" state), mine is promoted to allocated. Neither bench-01 nor
+    bench-02, the two benches the tour ever tells the user to acquire,
+    appears in this queue at all."""
     fleet = ScriptedFleet(LAB_SCRIPT, speed=100.0)
     task = asyncio.create_task(fleet.start(lambda _event: None))
     try:
@@ -136,29 +141,23 @@ async def test_get_reservations_reflects_scripted_state_transitions() -> None:
         reservations = await fleet.get_reservations()
         by_owner = {r.owner: r for r in reservations}
         assert by_owner[me].state is ReservationState.waiting
+        assert by_owner[me].allocations == {}
         assert "laptop/alice" not in by_owner
 
         reservations = await _wait_for_reservations(
             fleet, lambda rs: any(r.owner == "laptop/alice" for r in rs)
         )
         by_owner = {r.owner: r for r in reservations}
-        assert by_owner["laptop/alice"].state is ReservationState.waiting
-
-        reservations = await _wait_for_reservations(
-            fleet,
-            lambda rs: any(r.owner == me and r.state is ReservationState.allocated for r in rs),
-        )
-        by_owner = {r.owner: r for r in reservations}
-        assert by_owner[me].allocations["main"] == "bench-02"
-
-        reservations = await _wait_for_reservations(
-            fleet,
-            lambda rs: any(
-                r.owner == "laptop/alice" and r.state is ReservationState.allocated for r in rs
-            ),
-        )
-        by_owner = {r.owner: r for r in reservations}
+        assert by_owner["laptop/alice"].state is ReservationState.allocated
         assert by_owner["laptop/alice"].allocations["main"] == "bench-04"
+        assert by_owner[me].state is ReservationState.waiting  # still queued behind alice
+
+        reservations = await _wait_for_reservations(
+            fleet, lambda rs: "laptop/alice" not in {r.owner for r in rs}
+        )
+        by_owner = {r.owner: r for r in reservations}
+        assert by_owner[me].state is ReservationState.allocated
+        assert by_owner[me].allocations["main"] == "bench-04"
     finally:
         fleet.stop()
         await asyncio.wait_for(task, timeout=1.0)

@@ -6,6 +6,13 @@ from the dashboard (DashboardScreen's tour_hook), the action runner
 alice-acquires-bench-03 event) instead of any binding of its own. TourPanel
 renders whatever label() currently says and re-renders on every advance via
 on_change.
+
+Invariant: every public ``on_*``/``skip`` method advances the step counter
+by at most one, and only when its own guard (``self.step == <its step>``)
+matches the *current* step, never as a side effect of another trigger's
+call. One key press (or one scripted event landing) therefore corresponds
+to exactly one step transition, which is what makes the step index
+deterministic and worth asserting on directly in tests.
 """
 
 from collections.abc import Callable
@@ -18,7 +25,7 @@ STEP_TEXT: tuple[str, ...] = (
     "acquire the bench under your cursor with r",
     "press c to open commands, then enter to copy one",
     "press d (or enter) to open the detail view, then esc to close it",
-    "watch the activity log for alice's bench (press a if it is hidden)",
+    "watch the activity log for alice's bench (press a if it is hidden; n once you've seen it)",
     "press c then -> to open the robot pack tab, then enter to copy an entry",
     "press shift+p, switch to desk, then switch back to lab",
 )
@@ -45,7 +52,6 @@ class TourController:
     def __init__(self) -> None:
         self.step = 0
         self.on_change: Callable[[str], None] | None = None
-        self._alice_landed = False
         self._detail_opened = False
         self._seen_desk = False
         # DataTable auto-highlights row 0 the moment the fleet first
@@ -60,12 +66,6 @@ class TourController:
 
     def _advance(self) -> None:
         self.step += 1
-        if self.step == _STEP_ACTIVITY and self._alice_landed:
-            # The scripted event already landed before the tour reached
-            # this step: don't make the user wait for something that
-            # already happened.
-            self._advance()
-            return
         self._notify()
 
     def _notify(self) -> None:
@@ -105,7 +105,10 @@ class TourController:
             self._advance()
 
     def on_alice_acquire(self) -> None:
-        self._alice_landed = True
+        # Fires only while step 6 is the *current* step: if alice's
+        # scripted acquire lands earlier (a likely race at any nontrivial
+        # --speed), the activity log still shows it when the user gets
+        # there, and "n" (shown on every step) moves past it.
         if self.step == _STEP_ACTIVITY:
             self._advance()
 
