@@ -4,7 +4,7 @@ import contextlib
 import logging
 import os
 import time
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import replace
 from typing import Any
 
@@ -15,10 +15,10 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.worker import Worker
 
-import labgrid_tui
 from labgrid_tui.config import Config
 from labgrid_tui.coordinator.client import CoordinatorClient, CoordinatorError
 from labgrid_tui.coordinator.models import Reservation, resource_key
+from labgrid_tui.coordinator.source import FleetSource, GrpcFleetSource
 from labgrid_tui.coordinator.stream import (
     ConnectionChanged,
     ConnState,
@@ -48,18 +48,17 @@ from labgrid_tui.model.events import (
     KIND_RESOURCE_ONLINE,
     Kind,
 )
-from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import Pack
 from labgrid_tui.packs import PackError, default_packs_path, load_registered_packs, load_registry
 from labgrid_tui.plugins import PluginData, load_plugins
-from labgrid_tui.ui.actions import CliActionRunner
+from labgrid_tui.ui.actions import ActionRunner, CliActionRunner
 from labgrid_tui.ui.layout import HORIZONTAL_BREAKPOINTS, VERTICAL_BREAKPOINTS
 from labgrid_tui.ui.palette import CommandProvider
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
 from labgrid_tui.ui.screens.connection_overlay import ConnectionOverlay
-from labgrid_tui.ui.screens.dashboard import DashboardScreen
+from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
 from labgrid_tui.ui.store import FleetStore
-from labgrid_tui.ui.uistate import load_state, save_state, state_path
+from labgrid_tui.ui.uistate import UiState, load_state, save_state, state_path
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 from labgrid_tui.ui.widgets.status_bar import SegmentProvider
 
@@ -108,19 +107,45 @@ class LabgridTuiApp(App[None]):
         Binding("colon", "open_palette", "Palette", show=False),
     ]
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        coordinators: Coordinators | None = None,
+        persist_coordinators: bool = True,
+        packs: list[Pack] | None = None,
+        pack_errors: list[str] | None = None,
+        ui_state: UiState | None = None,
+        persist_ui_state: bool = True,
+        fleet_source_factory: Callable[[str], FleetSource] | None = None,
+        runner_factory: Callable[["LabgridTuiApp"], ActionRunner] | None = None,
+        sub_title: str | None = None,
+        tour_hook: TourHook | None = None,
+        on_coordinator_switch: Callable[[str], None] | None = None,
+    ) -> None:
+        """Every keyword-only argument is a dependency-injection seam for a
+        downstream shell (or the built-in tour, see labgrid_tui.tour): left
+        at its default, behavior is unchanged from a bare ``LabgridTuiApp(config)``.
+        """
         super().__init__()
+        if sub_title is not None:
+            self.sub_title = sub_title
         self.config = config
-        self._ui_state = load_state(state_path(os.environ))
+        self._ui_state = ui_state if ui_state is not None else load_state(state_path(os.environ))
+        self._persist_ui_state_enabled = persist_ui_state
         self.coordinators_path = default_coordinators_path(os.environ)
-        try:
-            self.coordinators: Coordinators = load_coordinators(self.coordinators_path)
-        except RegistryError:
-            # Same tolerance as every other machine-local file this app
-            # reads: a corrupt coordinators.toml must not block startup,
-            # only fall back to an empty registry (the TUI already
-            # connected via Config.coordinator regardless of this file).
-            self.coordinators = Coordinators()
+        if coordinators is not None:
+            self.coordinators: Coordinators = coordinators
+        else:
+            try:
+                self.coordinators = load_coordinators(self.coordinators_path)
+            except RegistryError:
+                # Same tolerance as every other machine-local file this app
+                # reads: a corrupt coordinators.toml must not block startup,
+                # only fall back to an empty registry (the TUI already
+                # connected via Config.coordinator regardless of this file).
+                self.coordinators = Coordinators()
+        self.persist_coordinators = persist_coordinators
         # A theme name from a stale ui.toml may no longer be registered (renamed
         # theme, downgraded textual); falling through to the built-in default
         # is safer than crashing before the TUI starts.
@@ -143,23 +168,34 @@ class LabgridTuiApp(App[None]):
             self.command_extra[cls_name] = self.command_extra.get(cls_name, ()) + templates
         self.place_extra: tuple[CommandTemplate, ...] = config.place_templates
         self.packs_path = default_packs_path(os.environ)
-        self.packs, self.pack_errors = self._load_packs()
-        self.runner = CliActionRunner(
-            copy_to_clipboard=self.copy_to_clipboard,
-            spawn=self._spawn_worker,
-            activity=self.push_event,
-            output=self._emit_output,
-            notify=lambda message: self.notify(message, severity="warning"),
+        if packs is not None:
+            self.packs, self.pack_errors = packs, list(pack_errors or [])
+        else:
+            self.packs, self.pack_errors = self._load_packs()
+        self.runner: ActionRunner = (
+            runner_factory(self)
+            if runner_factory is not None
+            else CliActionRunner(
+                copy_to_clipboard=self.copy_to_clipboard,
+                spawn=self._spawn_worker,
+                activity=self.push_event,
+                output=self._emit_output,
+                notify=lambda message: self.notify(message, severity="warning"),
+            )
         )
+        self._fleet_source_factory: Callable[[str], FleetSource] = (
+            fleet_source_factory if fleet_source_factory is not None else GrpcFleetSource
+        )
+        self._tour_hook = tour_hook
+        self._on_coordinator_switch = on_coordinator_switch
         # Created in on_mount, not here: grpc.aio binds its channel to the
         # event loop that is current at construction time, and __init__ runs
-        # before app.run() starts Textual's loop. A channel built here would
+        # before app.run() starts Textual's loop. A source built here would
         # attach every RPC to the wrong loop.
-        self.client: CoordinatorClient | None = None
-        self.stream: EventStream | None = None
-        # The Worker running stream.run(), tracked so a coordinator switch
-        # can cancel and await it explicitly: EventStream.stop() alone only
-        # stops the *next* reconnect attempt, it does not interrupt an
+        self.fleet_source: FleetSource | None = None
+        # The Worker running fleet_source.start(), tracked so a coordinator
+        # switch can cancel and await it explicitly: FleetSource.stop() alone
+        # only stops the *next* reconnect attempt, it does not interrupt an
         # in-flight gRPC stream, so a leak-free switch needs both.
         self._stream_worker: Worker[None] | None = None
         self._fleet_dirty = False
@@ -181,6 +217,17 @@ class LabgridTuiApp(App[None]):
         # (spec 3.2); DashboardScreen reads this via getattr.
         self.extra_status_segments: list[SegmentProvider] = []
 
+    @property
+    def client(self) -> CoordinatorClient | None:
+        """Back-compat accessor: the gRPC client behind ``fleet_source`` when
+        connected to a real coordinator, ``None`` otherwise (e.g. the tour)."""
+        return self.fleet_source.client if isinstance(self.fleet_source, GrpcFleetSource) else None
+
+    @property
+    def stream(self) -> EventStream | None:
+        source = self.fleet_source
+        return source.stream if isinstance(source, GrpcFleetSource) else None
+
     def _on_stream_event(self, event: Event) -> None:
         self.post_message(FleetEvent(event))
 
@@ -190,9 +237,13 @@ class LabgridTuiApp(App[None]):
         # late for #fleet-table etc. to be queryable from the app. This hook
         # runs at compose time, making DashboardScreen the bottom-of-stack
         # default screen instead.
-        return DashboardScreen(self.runner, self._ui_state, self._persist_ui_state)
+        return DashboardScreen(
+            self.runner, self._ui_state, self._persist_ui_state, tour_hook=self._tour_hook
+        )
 
     def _persist_ui_state(self) -> None:
+        if not self._persist_ui_state_enabled:
+            return
         save_state(state_path(os.environ), self._ui_state)
 
     def _load_packs(self) -> tuple[list[Pack], list[str]]:
@@ -222,14 +273,10 @@ class LabgridTuiApp(App[None]):
         # grpc.aio binds a channel to the event loop current when it's
         # created; called only from on_mount and _do_switch_coordinator, both
         # of which run on Textual's own running loop, never from __init__.
-        self.client = CoordinatorClient(address)
-        self.stream = EventStream(
-            self.client.channel,
-            self._on_stream_event,
-            client_name=current_id(),
-            version=labgrid_tui.__version__,
+        self.fleet_source = self._fleet_source_factory(address)
+        self._stream_worker = self.run_worker(
+            self.fleet_source.start(self._on_stream_event), exclusive=False
         )
-        self._stream_worker = self.run_worker(self.stream.run(), exclusive=False)
 
     def on_mount(self) -> None:
         self._connect(self.config.coordinator)
@@ -379,8 +426,8 @@ class LabgridTuiApp(App[None]):
                 return
 
     def retry_connection(self) -> None:
-        if self.stream is not None:
-            self.stream.retry_now()
+        if self.fleet_source is not None:
+            self.fleet_source.retry_now()
 
     def switch_coordinator(self, name: str) -> None:
         """Reconnect to a different coordinators.toml entry.
@@ -397,9 +444,9 @@ class LabgridTuiApp(App[None]):
         entry = self.coordinators.entries.get(name)
         if entry is None:
             return
-        old_stream, old_client, old_worker = self.stream, self.client, self._stream_worker
-        if old_stream is not None:
-            old_stream.stop()
+        old_source, old_worker = self.fleet_source, self._stream_worker
+        if old_source is not None:
+            old_source.stop()
         if old_worker is not None:
             # stop() alone only cancels the *next* reconnect wait; an
             # in-flight gRPC stream needs the Task itself cancelled so it
@@ -408,8 +455,8 @@ class LabgridTuiApp(App[None]):
             old_worker.cancel()
             with contextlib.suppress(Exception):
                 await old_worker.wait()
-        if old_client is not None:
-            await old_client.close()
+        if old_source is not None:
+            await old_source.aclose()
 
         self.store = FleetStore()
         self._reservations_seeded = False
@@ -421,8 +468,9 @@ class LabgridTuiApp(App[None]):
             self.screen_stack[0].query_one(DeviceTable).marks.clear()
 
         self.coordinators.current = entry.name
-        with contextlib.suppress(RegistryError):
-            save_coordinators(self.coordinators_path, self.coordinators)
+        if self.persist_coordinators:
+            with contextlib.suppress(RegistryError):
+                save_coordinators(self.coordinators_path, self.coordinators)
 
         self.config = replace(
             self.config,
@@ -435,6 +483,8 @@ class LabgridTuiApp(App[None]):
         self._connect(entry.address)
         self._fleet_dirty = True
         self.push_activity(f"coordinator switched to {entry.name} ({entry.address})")
+        if self._on_coordinator_switch is not None:
+            self._on_coordinator_switch(entry.name)
 
     def _log_activity(self, event: Event) -> None:
         # Coordinator replay on (re)connect resends every place/resource as
@@ -481,10 +531,10 @@ class LabgridTuiApp(App[None]):
                 refresh()
 
     async def _poll_reservations(self) -> None:
-        if self.client is None:
+        if self.fleet_source is None:
             return
         try:
-            reservations = await self.client.get_reservations()
+            reservations = await self.fleet_source.get_reservations()
         except CoordinatorError as exc:
             logger.debug("reservation poll failed: %s", exc)
             return
@@ -556,7 +606,6 @@ class LabgridTuiApp(App[None]):
         self.run_worker(coro, exclusive=False)
 
     async def on_unmount(self) -> None:
-        if self.stream is not None:
-            self.stream.stop()
-        if self.client is not None:
-            await self.client.close()
+        if self.fleet_source is not None:
+            self.fleet_source.stop()
+            await self.fleet_source.aclose()
