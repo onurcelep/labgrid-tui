@@ -532,3 +532,21 @@ async def test_enter_in_filter_refreshes_once_and_restores_rows(
         assert calls[0] == 1
         assert table.row_count == 2
         assert app.focused is table
+
+
+def test_status_refresh_tolerates_unmounted_screen() -> None:
+    # A late MarksChanged can reach the dashboard while it is being pushed
+    # or torn down, when no StatusBar is in its DOM; it must not raise.
+    from labgrid_tui.ui.screens.dashboard import DashboardScreen
+    from labgrid_tui.ui.uistate import UiState
+
+    class _Runner:
+        def run(self, entry: object, *, notify_success: bool = True) -> None:
+            pass
+
+        def copy(self, entry: object) -> None:
+            pass
+
+    screen = DashboardScreen(_Runner(), UiState(), lambda: None)  # type: ignore[arg-type]
+    screen.on_device_table_marks_changed(DeviceTable.MarksChanged())
+    screen._refresh_status()

@@ -257,7 +257,7 @@ class DashboardScreen(Screen[None]):
             return
         capability_extra = getattr(app, "capability_extra", None)
         table.refresh_rows(store, capability_extra)
-        self.query_one(StatusBar).refresh_status()
+        self._refresh_status()
 
     def log_line(self, line: str) -> None:
         self.query_one(ActivityLog).log_line(line)
@@ -467,7 +467,15 @@ class DashboardScreen(Screen[None]):
         self.refresh_fleet()
 
     def on_device_table_marks_changed(self, _message: DeviceTable.MarksChanged) -> None:
-        self.query_one(StatusBar).refresh_status()
+        self._refresh_status()
+
+    def _refresh_status(self) -> None:
+        # Same window as the DeviceTable guard in refresh_fleet: a message
+        # can arrive while the screen is being pushed or torn down.
+        try:
+            self.query_one(StatusBar).refresh_status()
+        except NoMatches:
+            return
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         # DataTable consumes enter before screen bindings fire (it posts
