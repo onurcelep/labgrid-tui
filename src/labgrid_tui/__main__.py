@@ -76,6 +76,13 @@ CONFIG_TEMPLATE = """\
 """
 
 
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive number, got {value!r}")
+    return parsed
+
+
 def _common_parser() -> argparse.ArgumentParser:
     """Flags accepted at every subcommand level, not just before it.
 
@@ -211,7 +218,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     tour_parser.add_argument(
         "--speed",
-        type=float,
+        type=_positive_float,
         default=1.0,
         help="time-scale factor for the tour's scripted events (default: 1.0)",
     )

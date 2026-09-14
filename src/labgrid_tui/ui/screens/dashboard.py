@@ -326,8 +326,6 @@ class DashboardScreen(Screen[None]):
             self.notify("no place under the cursor")
             return
         entries = self._entries_for(place_name)
-        if self._tour_hook is not None:
-            self._tour_hook("commands_open", category or "")
         self.app.push_screen(
             CommandOverlay(
                 place_name,

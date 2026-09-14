@@ -23,7 +23,6 @@ from labgrid_tui.coordinator.stream import (
     ConnectionChanged,
     ConnState,
     Event,
-    EventStream,
     PlaceChanged,
     PlaceDeleted,
     ResourceChanged,
@@ -222,11 +221,6 @@ class LabgridTuiApp(App[None]):
         """Back-compat accessor: the gRPC client behind ``fleet_source`` when
         connected to a real coordinator, ``None`` otherwise (e.g. the tour)."""
         return self.fleet_source.client if isinstance(self.fleet_source, GrpcFleetSource) else None
-
-    @property
-    def stream(self) -> EventStream | None:
-        source = self.fleet_source
-        return source.stream if isinstance(source, GrpcFleetSource) else None
 
     def _on_stream_event(self, event: Event) -> None:
         self.post_message(FleetEvent(event))
