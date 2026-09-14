@@ -1,0 +1,32 @@
+# Example command pack: see README.md (Command packs) for the full format.
+#
+# Register it with:
+#   labgrid-tui pack add examples/robot.toml
+#
+# Placeholders are resolved per place when the command overlay opens; an
+# entry whose placeholders can't resolve (or whose `requires` isn't met)
+# shows greyed out with a short reason instead of being hidden.
+
+[pack]
+name = "robot"
+description = "Robot Framework recipes for bench-01"
+
+[[commands]]
+label = "Smoke tests"
+command = "robot -v PLACE:{place} -v DUT_IP:{res.NetworkService.address} tests/smoke"
+requires = ["res.NetworkService"]
+
+[[commands]]
+label = "Full suite (acquired only)"
+command = "robot -v PLACE:{place} -v DUT_IP:{res.NetworkService.address} tests/"
+requires = ["res.NetworkService", "held"]
+
+[[commands]]
+label = "Tag the run"
+command = "robot -v PLACE:{place} -v BOARD:{tag.board} tests/smoke"
+requires = ["tag.board"]
+
+[[commands]]
+label = "Wait for my reservation"
+command = "labgrid-client -x {coordinator} wait {token}"
+requires = ["held"]

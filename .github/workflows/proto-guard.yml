@@ -1,0 +1,16 @@
+name: proto-guard
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly, monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: diff vendored proto against upstream master
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/labgrid-project/labgrid/master/labgrid/remote/proto/labgrid-coordinator.proto \
+            -o /tmp/upstream.proto
+          diff -u src/labgrid_tui/coordinator/proto/labgrid-coordinator.proto /tmp/upstream.proto

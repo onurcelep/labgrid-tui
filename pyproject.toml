@@ -1,0 +1,82 @@
+[project]
+name = "labgrid-tui"
+version = "0.1.0"
+description = "Terminal dashboard for labgrid labs: live fleet view and discoverable labgrid-client commands. Independent, third-party project; not affiliated with labgrid."
+requires-python = ">=3.11"
+license = "Apache-2.0 AND LGPL-2.1-or-later"
+license-files = ["LICENSE", "LICENSE.labgrid"]
+readme = "README.md"
+keywords = ["labgrid", "tui", "textual", "hardware-in-the-loop", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "textual>=8.2,<9",
+    "grpcio>=1.60",
+    "protobuf>=4.25",
+    "tomli-w>=1.2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/onurcelep/labgrid-tui"
+
+[project.scripts]
+labgrid-tui = "labgrid_tui.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "grpcio-tools>=1.60",
+    "types-protobuf",
+    "grpc-stubs",
+    "pre-commit>=4.6.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: requires a live labgrid coordinator (docker)",
+    "first_run: leaves ui.toml unseeded so onboarding timers arm as on a fresh install",
+]
+addopts = "-m 'not integration'"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["src/labgrid_tui/coordinator/stubs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = "labgrid_tui.coordinator.stubs.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["grpc", "grpc.*"]
+ignore_missing_imports = true
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "examples", "README.md", "LICENSE", "LICENSE.labgrid", "pyproject.toml"]
