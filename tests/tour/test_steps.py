@@ -41,10 +41,13 @@ def _at(step: int) -> TourController:
     return controller
 
 
-def test_label_is_one_based_and_names_the_key() -> None:
+def test_title_is_one_based_and_label_says_where_to_look_and_which_key() -> None:
     controller = TourController()
-    assert controller.label().startswith("Step 1/8: Your lab")
+    assert controller.title() == "TOUR 1/8"
+    assert controller.label().startswith("Look at the table")
     assert "j/k" in controller.label()
+    assert controller.dashboard_focus() == "fleet-table"
+    assert controller.modal_focus() is None
 
 
 def test_done_after_the_last_step() -> None:

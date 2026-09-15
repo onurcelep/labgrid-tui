@@ -17,13 +17,15 @@ from labgrid_tui.model.commands import CommandEntry
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.app import TourApp
 from labgrid_tui.tour.steps import STEP_COUNT
+from labgrid_tui.tour.welcome import WelcomeScreen
+from labgrid_tui.ui.guidance import FOCUS_CLASS
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
 from labgrid_tui.ui.screens.coordinator_edit import CoordinatorEditModal
 from labgrid_tui.ui.screens.coordinator_selector import CoordinatorSelector
 from labgrid_tui.ui.screens.detail_overlay import DetailOverlay
 from labgrid_tui.ui.widgets.device_table import DeviceTable
-from labgrid_tui.ui.widgets.tour_panel import TourPanel
+from labgrid_tui.ui.widgets.tour_card import TourCard
 
 
 @pytest.fixture(autouse=True)
@@ -48,26 +50,47 @@ async def _wait_until(pilot: object, predicate: Callable[[], bool], timeout: flo
         await asyncio.sleep(0.02)
 
 
-def _panel(app: TourApp) -> TourPanel:
-    return app.screen_stack[0].query_one(TourPanel)
+def _card(app: TourApp) -> TourCard:
+    return app.screen_stack[0].query_one(TourCard)
+
+
+def _title(app: TourApp) -> str:
+    return str(_card(app).border_title)
+
+
+def _framed(app: TourApp) -> list[str]:
+    """Ids of dashboard widgets currently carrying the tour outline."""
+    dashboard = app.screen_stack[0]
+    return sorted(w.id or "" for w in dashboard.query(f".{FOCUS_CLASS}"))
 
 
 async def _ready(app: TourApp, pilot: object) -> None:
+    """Fleet live, welcome card dismissed with Enter, step 1 card on screen."""
     assert await _wait_until(pilot, lambda: app.store.conn is ConnState.LIVE)
     assert await _wait_until(pilot, lambda: len(app.store.places) == 6)
-    assert await _wait_until(pilot, lambda: _panel(app).current_text.startswith("Step 1/"))
+    assert isinstance(app.screen, WelcomeScreen)
+    await pilot.press("enter")  # type: ignore[attr-defined]
+    assert await _wait_until(pilot, lambda: bool(app.screen_stack[0].query(TourCard)))
+    assert await _wait_until(pilot, lambda: _title(app) == "TOUR 1/8")
 
 
 def _overlay_entries(overlay: CommandOverlay) -> list[CommandEntry]:
     return [entry for entries in overlay._by_category.values() for entry in entries]
 
 
-def _regions(app: TourApp) -> dict[str, tuple[int, int]]:
+def _regions(app: TourApp) -> dict[str, tuple[int, int, int, int]]:
+    """(x, y, width, height) per widget id or class name, as the compositor placed them."""
     screen = app.screen_stack[0]
-    out: dict[str, tuple[int, int]] = {}
+    out: dict[str, tuple[int, int, int, int]] = {}
     for widget, (region, *_rest) in screen._compositor.visible_widgets.items():
-        out[type(widget).__name__] = (region.y, region.height)
+        out[widget.id or type(widget).__name__] = (region.x, region.y, region.width, region.height)
     return out
+
+
+def _overlaps(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
 async def test_tour_starts_live_on_fake_data_with_no_network() -> None:
@@ -78,64 +101,121 @@ async def test_tour_starts_live_on_fake_data_with_no_network() -> None:
         assert app._ui_state.show_activity is True
 
 
-async def test_panel_sits_above_a_visible_footer_and_header_is_visible() -> None:
+@pytest.mark.parametrize("size", [(120, 40), (100, 30)])
+async def test_welcome_card_then_step_card_inside_the_table_row(size: tuple[int, int]) -> None:
     app = TourApp()
-    async with app.run_test(size=(120, 30)) as pilot:
-        await _ready(app, pilot)
+    async with app.run_test(size=size) as pilot:
+        assert await _wait_until(pilot, lambda: len(app.store.places) == 6)
+        assert isinstance(app.screen, WelcomeScreen)
+        # The welcome card is a centered modal; nothing of the tour is on the
+        # dashboard yet and no outline is drawn.
+        assert not app.screen_stack[0].query(TourCard)
+        assert _framed(app) == []
+        await pilot.press("enter")
+        assert await _wait_until(pilot, lambda: bool(app.screen_stack[0].query(TourCard)))
+        await pilot.pause()
+        card = _card(app)
+        assert card.can_focus is False
+        assert isinstance(app.focused, DeviceTable)
         regions = _regions(app)
-        assert regions["Header"] == (0, 1)
-        assert regions["StatusBar"] == (1, 1)
-        assert regions["Footer"] == (29, 1)
-        assert regions["TourPanel"] == (28, 1)
+        card_region = regions["tour-card"]
+        row = regions["main-row"]
+        assert card_region[1] >= row[1] and card_region[1] + card_region[3] <= row[1] + row[3]
+        assert card_region[0] + card_region[2] <= row[0] + row[2]
+        for other in ("Header", "status-bar", "activity-log", "Footer"):
+            assert not _overlaps(card_region, regions[other]), other
+        assert regions["Footer"][1] == size[1] - 1
+        assert _title(app) == "TOUR 1/8"
+        assert card.current_text.startswith("Look at the table")
+        assert _framed(app) == ["fleet-table"]
 
 
-async def test_n_skips_one_step_at_a_time_then_dismisses() -> None:
+async def test_welcome_n_starts_and_q_quits() -> None:
+    app = TourApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        assert await _wait_until(pilot, lambda: isinstance(app.screen, WelcomeScreen))
+        await pilot.press("n")
+        assert await _wait_until(pilot, lambda: bool(app.screen_stack[0].query(TourCard)))
+    app = TourApp()
+    exit_calls: list[object] = []
+    async with app.run_test(size=(120, 30)) as pilot:
+        assert await _wait_until(pilot, lambda: isinstance(app.screen, WelcomeScreen))
+        app.exit = lambda *a, **kw: exit_calls.append((a, kw))  # type: ignore[method-assign]
+        await pilot.press("q")
+        await pilot.pause()
+    assert len(exit_calls) == 1
+
+
+async def test_n_skips_one_step_at_a_time_and_the_done_card_stays() -> None:
     app = TourApp()
     async with app.run_test(size=(120, 30)) as pilot:
         await _ready(app, pilot)
-        panel = _panel(app)
         for expected in range(2, STEP_COUNT + 1):
             await pilot.press("n")
             await pilot.pause()
-            assert panel.current_text.startswith(f"Step {expected}/{STEP_COUNT}")
+            assert _title(app) == f"TOUR {expected}/{STEP_COUNT}"
         await pilot.press("n")
         await pilot.pause()
-        assert panel.current_text.startswith("That is the tour.")
-        assert app.screen_stack[0].query(TourPanel)
-        await pilot.press("n")  # any key ends the closing line
+        assert _title(app) == "TOUR done"
+        assert _card(app).current_text.startswith("That is the tour.")
+        assert _framed(app) == []
+        await pilot.press("n")  # nothing left to skip; the card stays until q
         await pilot.pause()
-        assert not app.screen_stack[0].query(TourPanel)
+        assert app.screen_stack[0].query(TourCard)
         assert app.screen_stack[0].query_one(Footer)
 
 
-async def test_closing_line_dismisses_itself_after_done_seconds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("labgrid_tui.tour.app.DONE_SECONDS", 0.05)
+async def test_guidance_is_mirrored_inside_modals_with_an_outline() -> None:
     app = TourApp()
-    async with app.run_test(size=(120, 30)) as pilot:
+    async with app.run_test(size=(120, 40)) as pilot:
         await _ready(app, pilot)
-        for _ in range(STEP_COUNT):
-            await pilot.press("n")
-            await pilot.pause()
-        assert await _wait_until(pilot, lambda: not app.screen_stack[0].query(TourPanel))
+        await pilot.press("j")
+        await pilot.press("r")
+        await pilot.pause()
+        assert _title(app) == "TOUR 3/8"
+        await pilot.press("c")
+        await pilot.pause()
+        overlay = app.screen
+        assert isinstance(overlay, CommandOverlay)
+        line = overlay.query_one("#overlay-hint-tour")
+        assert not line.has_class("hidden")
+        assert overlay.query_one("#overlay-tabs").has_class(FOCUS_CLASS)
+        painted = app.export_screenshot()
+        assert "TOUR" in painted and "3/8" in painted
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("n")  # to step 4: the detail step
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        detail = app.screen
+        assert isinstance(detail, DetailOverlay)
+        assert not detail.query_one("#detail-hint-tour").has_class("hidden")
+        assert detail.query_one("#detail-modal").has_class(FOCUS_CLASS)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert _title(app) == "TOUR 5/8"
+        assert _framed(app) == ["activity-log"]
 
 
 async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
     app = TourApp()
     async with app.run_test(size=(120, 30)) as pilot:
         await _ready(app, pilot)
-        panel = _panel(app)
         for _ in range(STEP_COUNT - 1):
             await pilot.press("n")
             await pilot.pause()
-        assert panel.current_text.startswith(f"Step {STEP_COUNT}/{STEP_COUNT}")
+        assert _title(app) == f"TOUR {STEP_COUNT}/{STEP_COUNT}"
+        assert _framed(app) == ["status-bar"]
         await pilot.press("P")
         await pilot.pause()
-        assert isinstance(app.screen, CoordinatorSelector)
+        selector = app.screen
+        assert isinstance(selector, CoordinatorSelector)
+        assert not selector.query_one("#coord-hint-tour").has_class("hidden")
+        assert selector.query_one("#coord-modal").has_class(FOCUS_CLASS)
         await pilot.press("n")
         await pilot.pause()
-        assert panel.current_text.startswith("That is the tour.")
+        assert _title(app) == "TOUR done"
         await pilot.press("escape")
         await pilot.pause()
 
@@ -145,7 +225,6 @@ async def test_full_story_by_keyboard_alone() -> None:
     app.delayed_cue_seconds = 0.05
     async with app.run_test(size=(120, 30)) as pilot:
         await _ready(app, pilot)
-        panel = _panel(app)
         table = app.screen_stack[0].query_one(DeviceTable)
         me = current_id()
         log_lines: list[str] = []
@@ -158,16 +237,16 @@ async def test_full_story_by_keyboard_alone() -> None:
         app.push_event = record  # type: ignore[method-assign]
 
         # 1: a real cursor move (the table's own first-row highlight does not count).
-        assert panel.current_text.startswith("Step 1/")
+        assert _title(app) == "TOUR 1/8"
         await pilot.press("j")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 2/")
+        assert _title(app) == "TOUR 2/8"
         assert table.cursor_place() == "bench-02"
 
         # 2: r copies the get line; the fleet then shows the bench as mine.
         await pilot.press("r")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 3/")
+        assert _title(app) == "TOUR 3/8"
         assert await _wait_until(pilot, lambda: app.store.places["bench-02"].acquired == me)
 
         # 3: commands overlay on my bench: copy the highlighted entry.
@@ -176,7 +255,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         assert isinstance(app.screen, CommandOverlay)
         await pilot.press("enter")  # copies and closes the overlay
         await pilot.pause()
-        assert panel.current_text.startswith("Step 4/")
+        assert _title(app) == "TOUR 4/8"
         assert not isinstance(app.screen, CommandOverlay)
 
         # 4: detail open and close.
@@ -185,7 +264,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         assert isinstance(app.screen, DetailOverlay)
         await pilot.press("escape")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 5/")
+        assert _title(app) == "TOUR 5/8"
 
         # 5: entering it cued alice and the serial port; the fleet reacted.
         assert app.store.places["bench-03"].acquired == "laptop/alice"
@@ -196,7 +275,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         assert serial.avail is False
         await pilot.press("n")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 6/")
+        assert _title(app) == "TOUR 6/8"
 
         # 6: on alice's bench r reads "Queue and acquire"; every group is
         # still listed, greyed with the reason.
@@ -216,7 +295,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         await pilot.pause()
         await pilot.press("r")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 7/")
+        assert _title(app) == "TOUR 7/8"
 
         # 7: my reservation was queued on entry and allocated a moment later.
         assert await _wait_until(
@@ -238,7 +317,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         await pilot.pause()
         app.runner.copy(robot)
         await pilot.pause()
-        assert panel.current_text.startswith("Step 8/")
+        assert _title(app) == "TOUR 8/8"
 
         # 8: switch to desk from the selector.
         await pilot.press("P")
@@ -247,7 +326,7 @@ async def test_full_story_by_keyboard_alone() -> None:
         await pilot.press("k")  # from lab (current) up to desk
         await pilot.press("enter")
         assert await _wait_until(pilot, lambda: set(app.store.places) == {"desk-01", "desk-02"})
-        assert await _wait_until(pilot, lambda: panel.current_text.startswith("That is the tour."))
+        assert await _wait_until(pilot, lambda: _title(app) == "TOUR done")
 
 
 async def test_q_quits_the_tour() -> None:
@@ -273,7 +352,7 @@ async def test_tour_never_touches_the_isolated_xdg_dirs() -> None:
 
     app = TourApp()
     async with app.run_test(size=(120, 30)) as pilot:
-        assert await _wait_until(pilot, lambda: len(app.store.places) == 6)
+        await _ready(app, pilot)
         await pilot.press("j")
         await pilot.press("a")  # toggles the activity log, persisted on the real app
 
