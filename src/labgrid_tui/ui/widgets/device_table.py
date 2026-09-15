@@ -337,7 +337,7 @@ class DeviceTable(DataTable[str | Text]):
                 continue
             for col_idx, (col_key, cell) in enumerate(zip(self._column_keys, cells, strict=True)):
                 if prev is None or col_idx >= len(prev) or prev[col_idx] != fingerprints[col_idx]:
-                    self.update_cell(place.name, col_key, cell)
+                    self.update_cell(place.name, col_key, cell, update_width=True)
             self._prev_fingerprints[place.name] = fingerprints
 
     def _row_cells(
