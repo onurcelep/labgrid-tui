@@ -5,6 +5,7 @@ import pytest
 from labgrid_tui.config import Config
 from labgrid_tui.coordinator.stubs import labgrid_coordinator_pb2 as pb2
 from labgrid_tui.model.commands import CommandEntry
+from labgrid_tui.model.identity import current_id
 from labgrid_tui.ui.app import LabgridTuiApp
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 from tests.fake_coordinator import FakeCoordinator
@@ -58,11 +59,11 @@ async def test_acquire_on_cursor_row(
         assert "acquire" in runner.ran[0].command_line
 
 
-async def test_acquire_on_place_reserved_by_other_is_refused(
+async def test_acquire_on_place_reserved_by_other_queues(
     fake_coordinator: tuple[FakeCoordinator, str],
 ) -> None:
-    """`r` on a place someone else has reserved must not acquire it: the
-    coordinator's AcquirePlace would refuse with PERMISSION_DENIED."""
+    """`r` on a place someone else has reserved must not acquire it outright
+    (the coordinator would refuse); the unified line queues and waits."""
     servicer, address = fake_coordinator
     servicer.places.append(pb2.Place(name="tb-1", reservation="TOK"))
     servicer.reservations.append(pb2.Reservation(owner="host9/carol", token="TOK", state=0))
@@ -77,8 +78,10 @@ async def test_acquire_on_place_reserved_by_other_is_refused(
         table.focus()
         await pilot.press("r")
         await pilot.pause()
-        assert runner.ran == []
-        assert notifications == ["reserved by host9/carol"]
+        assert len(runner.ran) == 1
+        assert runner.ran[0].template.label == "Queue and acquire"
+        assert "reserve --wait --shell name=tb-1" in runner.ran[0].command_line
+        assert notifications == []
 
 
 async def test_bulk_release_skips_invalid(
@@ -186,7 +189,8 @@ async def test_single_dispatch_posts_success_toast(
     fake_coordinator: tuple[FakeCoordinator, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A single-target dispatch keeps the per-command success toast."""
+    """A single-target dispatch keeps the per-command success toast (release
+    runs; the acquire line is copy-only)."""
     monkeypatch.setattr("labgrid_tui.ui.actions.client_available", lambda: True)
 
     async def fake_capture(line: str, on_line: object) -> int:
@@ -194,7 +198,7 @@ async def test_single_dispatch_posts_success_toast(
 
     monkeypatch.setattr("labgrid_tui.ui.actions.run_capture", fake_capture)
     servicer, address = fake_coordinator
-    servicer.places.append(pb2.Place(name="tb-1"))
+    servicer.places.append(pb2.Place(name="tb-1", acquired=current_id()))
     app = LabgridTuiApp(_config(address))
     async with app.run_test() as pilot:
         table = await _ready(app, pilot, 1)
@@ -205,7 +209,7 @@ async def test_single_dispatch_posts_success_toast(
 
         app.notify = record  # type: ignore[method-assign]
         table.focus()
-        await pilot.press("r")
+        await pilot.press("R")
         for _ in range(20):
             await pilot.pause()
             await asyncio.sleep(0.05)

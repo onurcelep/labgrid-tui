@@ -121,22 +121,31 @@ TAB_OPERATIONS = """\
 | --- | --- |
 | mark then verb | `space` marks rows across refresh; `r`/`shift+r` act on marks, else cursor row |
 | filter | `/` matches name, comment, tags, capability abbreviations, case-insensitive |
-| acquire/release | `r`/`shift+r` copy (or run) acquire/release; all-offline refuses acquire |
+| get a bench | `r` copies one line that reserves, waits for the allocation and acquires |
+| release | `shift+r` releases the bench; the reservation behind it lapses on its own |
 | tour | `labgrid-tui tour` walks through this dashboard on fake data, no coordinator needed |
 
-### acquire vs. reserve gating
+### what you can and cannot do, and why
 
-The Manage tab's Acquire and "Reserve (queue)" entries mirror the
-coordinator's own AcquirePlace check, so exactly one of the two is ever
-runnable for a given place:
+Every bench lists every group of commands; what you cannot do right now is
+greyed with the reason instead of hidden:
 
-| Place state | Acquire | Reserve (queue) |
-| --- | --- | --- |
-| free, unreserved | runnable | "free: acquire directly" |
-| reserved by someone else | "reserved by OWNER" | runnable |
-| acquired by someone else | not offered | runnable |
-| reserved by you, waiting | "waiting for allocation" | "reserved by you" |
-| reserved by you, allocated | runnable (plain, or `+TOKEN`) | "reserved by you" |
+| Reason | Meaning |
+| --- | --- |
+| hold the bench first | resource commands need the bench acquired by you |
+| held by USER | someone else acquired it; `r` reads "Queue and acquire" |
+| reserved by USER | someone else's reservation is allocated to it |
+| resource offline | the resource this command uses is not available |
+| already yours | you hold it; nothing to acquire |
+| all resources offline | nothing to acquire on a dead exporter |
+
+The Manage tab carries the `r` line ("Acquire", or "Queue and acquire" on a
+busy bench), the bare `acquire` ("Acquire now (no queue)"), Release, Allow
+user and "Reserve (queue)". The `r` line is
+`labgrid-client -p +$(labgrid-client reserve --wait --shell name=PLACE | cut -d= -f2) acquire`:
+`reserve --wait --shell` prints `export LG_TOKEN=...` once the coordinator
+allocates the bench and `-p +TOKEN` acquires that bench; it works the same
+in bash, zsh and fish. After `release`, the reservation lapses by itself.
 
 The Reservations tab (own tab in the command overlay, own entries in the
 palette; absent if you have no reservations) lists your reservations:

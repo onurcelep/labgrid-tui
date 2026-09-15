@@ -191,7 +191,8 @@ class CommandProvider(Provider):
             return []
 
         cmds: list[_Command] = []
-        if bool(place.acquired) or bool(place.reservation):
+        me = current_id()
+        if place.acquired == me or me in place.allowed:
             cmds.append(
                 _Command(
                     f"Device: Release {place_name}",
@@ -200,10 +201,12 @@ class CommandProvider(Provider):
                 )
             )
         else:
+            busy = bool(place.acquired) or bool(place.reservation)
+            verb = "Queue and acquire" if busy else "Acquire"
             cmds.append(
                 _Command(
-                    f"Device: Acquire {place_name}",
-                    "Acquire the selected place",
+                    f"Device: {verb} {place_name}",
+                    "Reserve, wait for the allocation and acquire the selected place",
                     dashboard.action_acquire,
                 )
             )

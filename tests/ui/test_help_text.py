@@ -24,7 +24,7 @@ def test_help_text_covers_table_columns() -> None:
 
 
 def test_help_text_covers_operations_prose() -> None:
-    for phrase in ("mark then verb", "filter", "acquire/release"):
+    for phrase in ("mark then verb", "filter", "get a bench"):
         assert phrase in TAB_OPERATIONS
 
 
