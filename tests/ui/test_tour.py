@@ -323,17 +323,29 @@ async def test_full_story_by_keyboard_alone() -> None:
         await pilot.pause()
         assert _title(app) == "TOUR 7/8"
 
-        # 7: my reservation was queued on entry and allocated a moment later.
+        # 7: the copied line's whole effect plays out, in order: queued,
+        # alice releases, allocated, acquired by me; the log tells it.
         assert await _wait_until(
-            pilot, lambda: app.store.places["bench-03"].reservation == "tour-mine-1", timeout=3.0
+            pilot, lambda: app.store.places["bench-03"].acquired == me, timeout=3.0
         )
         assert await _wait_until(
             pilot,
             lambda: any(
-                r.owner == me and r.state.name == "allocated" for r in app.store.reservations
+                r.owner == me and r.state.name == "acquired" for r in app.store.reservations
             ),
             timeout=3.0,
         )
+        story = [
+            next(i for i, line in enumerate(log_lines) if "tour-mine-1 waiting" in line),
+            next(i for i, line in enumerate(log_lines) if line.startswith("bench-03 released")),
+            next(i for i, line in enumerate(log_lines) if "tour-mine-1 -> allocated" in line),
+            next(
+                i
+                for i, line in enumerate(log_lines)
+                if line.startswith("bench-03 acquired by") and me in line
+            ),
+        ]
+        assert story == sorted(story)
         await pilot.press("c")
         await pilot.pause()
         overlay = app.screen

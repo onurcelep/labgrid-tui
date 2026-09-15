@@ -44,7 +44,8 @@ _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
 
 # bench-04 is reserved by alice for the whole tour (a black dot from the
 # start). My own reservation appears only when the tour has the user queue
-# for alice's bench-03, and is allocated a moment later when alice lets go.
+# for alice's bench-03; it is allocated when alice lets go, and the bench
+# is then acquired for me, exactly what the copied one-line command does.
 _MY_TOKEN = "tour-mine-1"
 _ALICE_TOKEN = "tour-alice-1"
 _ALICE = "laptop/alice"
@@ -56,6 +57,7 @@ CUE_SERIAL_OFFLINE = "serial_offline"
 CUE_SERIAL_ONLINE = "serial_online"
 CUE_MINE_QUEUED = "mine_queued"
 CUE_MINE_ALLOCATED = "mine_allocated"
+CUE_MINE_ACQUIRED = "mine_acquired"  # the queued one-liner completes: bench-03 is mine
 
 
 def _place(
@@ -145,6 +147,13 @@ def _alice_hands_over_bench_03(**_ignored: str) -> list[Event]:
     return [PlaceChanged(place)]
 
 
+def _mine_acquires_bench_03(**_ignored: str) -> list[Event]:
+    """The reserve-and-acquire line finishes: bench-03 is acquired by me
+    under my reservation token."""
+    place = replace(_bench_place("bench-03"), acquired=current_id(), reservation=_MY_TOKEN)
+    return [PlaceChanged(place)]
+
+
 def _bench_05_serial(*, avail: bool, **_ignored: str) -> list[Event]:
     resource = _resource(
         "bench-05", "serial", "NetworkSerialPort", {"host": EXPORTER, "port": 4005}, avail=avail
@@ -169,20 +178,20 @@ def _reservation(
 
 
 def _lab_reservations(cued: frozenset[str]) -> list[Reservation]:
-    """alice's allocation on bench-04 stands for the whole tour; my own
-    reservation exists once the user has queued for bench-03 (waiting), and
-    is allocated once alice hands the bench over."""
+    """alice's allocation on bench-04 stands for the whole tour. My own
+    reservation exists once the user has queued for bench-03 (waiting),
+    is allocated once alice hands the bench over, and is acquired once the
+    one-liner has taken the bench."""
     reservations = [_reservation(_ALICE, _ALICE_TOKEN, ReservationState.allocated, "bench-04")]
     if CUE_MINE_QUEUED in cued:
-        allocated = CUE_MINE_ALLOCATED in cued
-        reservations.append(
-            _reservation(
-                current_id(),
-                _MY_TOKEN,
-                ReservationState.allocated if allocated else ReservationState.waiting,
-                "bench-03" if allocated else None,
-            )
-        )
+        if CUE_MINE_ACQUIRED in cued:
+            state = ReservationState.acquired
+        elif CUE_MINE_ALLOCATED in cued:
+            state = ReservationState.allocated
+        else:
+            state = ReservationState.waiting
+        allocated = "bench-03" if state is not ReservationState.waiting else None
+        reservations.append(_reservation(current_id(), _MY_TOKEN, state, allocated))
     return reservations
 
 
@@ -242,6 +251,7 @@ LAB_SCRIPT = _script(
         CUE_SERIAL_ONLINE: lambda **_kw: _bench_05_serial(avail=True),
         CUE_MINE_QUEUED: lambda **_kw: [],  # observable through get_reservations()
         CUE_MINE_ALLOCATED: _alice_hands_over_bench_03,
+        CUE_MINE_ACQUIRED: _mine_acquires_bench_03,
     },
     _lab_reservations,
 )
