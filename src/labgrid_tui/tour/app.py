@@ -21,7 +21,7 @@ from labgrid_tui.coordinators import CoordinatorEntry, Coordinators
 from labgrid_tui.tour.fleet import ScriptedFleet, fleet_source_factory
 from labgrid_tui.tour.pack import load_robot_pack
 from labgrid_tui.tour.runner import TourActionRunner
-from labgrid_tui.tour.steps import ENTRY_CUES, TourController
+from labgrid_tui.tour.steps import DELAYED_ENTRY_CUES, ENTRY_CUES, TourController
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.app import LabgridTuiApp
 from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
@@ -34,6 +34,8 @@ DESK_ADDRESS = "tour:desk"
 
 # How long the closing line stays after the last step; any key ends it.
 DONE_SECONDS = 6.0
+# Delay before a step's "a moment later" cue (see steps.DELAYED_ENTRY_CUES).
+DELAYED_CUE_SECONDS = 2.5
 WELCOME_TITLE = "Welcome to labgrid-tui"
 WELCOME_TEXT = (
     "A tour on fake data: six benches, nothing here reaches a real lab. "
@@ -147,10 +149,23 @@ class TourApp(LabgridTuiApp):
             self._controller.on_detail_close()
 
     def _on_step_entered(self, step: int) -> None:
+        for cue in ENTRY_CUES.get(step, ()):
+            self._cue(cue)
+        for cue in DELAYED_ENTRY_CUES.get(step, ()):
+            self.set_timer(self.delayed_cue_seconds, lambda cue=cue: self._cue(cue))
+
+    delayed_cue_seconds: float = DELAYED_CUE_SECONDS
+
+    def _cue(self, cue: str) -> None:
         source = self.fleet_source
-        if isinstance(source, ScriptedFleet):
-            for cue in ENTRY_CUES.get(step, ()):
-                source.cue(cue)
+        if not isinstance(source, ScriptedFleet):
+            return
+        params = {"place": self._controller.acquired_place or "bench-01"}
+        if source.cue(cue, **params):
+            # Reservation state is only observable through the poll; run it
+            # now so the Reservations tab and the "(yours)" marker follow
+            # the cue instead of the next 10 s tick.
+            self.run_worker(self._poll_reservations(), exclusive=False)
 
     def _on_done(self) -> None:
         self.set_timer(DONE_SECONDS, self.dismiss_tour_panel)
