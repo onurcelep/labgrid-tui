@@ -24,7 +24,7 @@ from labgrid_tui.model.commands import GROUP_ORDER, CommandEntry, EntryState
 from labgrid_tui.model.flags import flags_hint
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_suspend
-from labgrid_tui.ui.guidance import FOCUS_CLASS, GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, MARKER, TourGuidance
 
 # Keys the option list / screen keep handling themselves; everything else
 # that looks like text entry is forwarded to the filter input (see on_key).
@@ -217,6 +217,7 @@ class CommandOverlay(ModalScreen[None]):
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         # Focus follows the tab so up/down navigate the new list at once.
         self._focus_active_list()
+        self._apply_marker()
 
     def action_list_cursor_down(self) -> None:
         if self._editing():
@@ -391,7 +392,7 @@ class CommandOverlay(ModalScreen[None]):
         self.dismiss()
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the outlined widget."""
+        """Tour sideband: refresh the guidance line and the pointed tab."""
         self._guidance = guidance
         try:
             line = self.query_one("#overlay-hint-tour", Static)
@@ -403,8 +404,24 @@ class CommandOverlay(ModalScreen[None]):
         # it, so a small terminal keeps its rows for the content.
         with contextlib.suppress(NoMatches):
             self.query_one("#overlay-hint", Static).set_class(guidance is not None, "hidden")
-        for outlined in self.query(f".{FOCUS_CLASS}"):
-            outlined.remove_class(FOCUS_CLASS)
-        if guidance is not None and guidance.focus:
-            with contextlib.suppress(NoMatches):
-                self.query_one(f"#{guidance.focus}").add_class(FOCUS_CLASS)
+        self._apply_marker()
+
+    def _apply_marker(self) -> None:
+        """Point at the tab the guidance names ("*" = whichever is active)."""
+        target = None if self._guidance is None else self._guidance.target
+        if target == "*":
+            target = self._active_category()
+        try:
+            tabs = self.query_one(TabbedContent)
+        except NoMatches:
+            return
+        for category in self._by_category:
+            with contextlib.suppress(Exception):
+                tab = tabs.get_tab(f"tab-{_slug(category)}")
+                tab.label = f"{MARKER} {category}" if category == target else category
+
+    def _active_category(self) -> str | None:
+        slug = self._active_slug()
+        if slug is None:
+            return None
+        return next((c for c in self._by_category if _slug(c) == slug), None)

@@ -24,7 +24,7 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_osc52, copy_via_suspend
 from labgrid_tui.ui.format import abbrev
-from labgrid_tui.ui.guidance import FOCUS_CLASS, GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, MARKER, TourGuidance
 from labgrid_tui.ui.layout import is_narrow
 from labgrid_tui.ui.store import FleetStore
 
@@ -167,12 +167,12 @@ class DetailOverlay(ModalScreen[None]):
 
         place = store.places.get(self.place_name)
         if place is None:
-            title.update(f"Device: {self.place_name} (removed)")
+            title.update(f"{self._title_prefix()}Device: {self.place_name} (removed)")
             body.update("this place no longer exists on the coordinator")
             self._plain_text = f"{self.place_name}: removed"
             return
 
-        title.update(f"Device: {place.name}")
+        title.update(f"{self._title_prefix()}Device: {place.name}")
         text = Text()
         plain: list[str] = [f"Device: {place.name}"]
 
@@ -339,7 +339,7 @@ class DetailOverlay(ModalScreen[None]):
         )
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the outlined widget."""
+        """Tour sideband: refresh the guidance line and the pointed title."""
         self._guidance = guidance
         try:
             line = self.query_one("#detail-hint-tour", Static)
@@ -351,8 +351,8 @@ class DetailOverlay(ModalScreen[None]):
         # it, so a small terminal keeps its rows for the content.
         with contextlib.suppress(NoMatches):
             self.query_one("#detail-hint", Static).set_class(guidance is not None, "hidden")
-        for outlined in self.query(f".{FOCUS_CLASS}"):
-            outlined.remove_class(FOCUS_CLASS)
-        if guidance is not None and guidance.focus:
-            with contextlib.suppress(NoMatches):
-                self.query_one(f"#{guidance.focus}").add_class(FOCUS_CLASS)
+        self.refresh_fleet()
+
+    def _title_prefix(self) -> str:
+        pointed = self._guidance is not None and self._guidance.target == "title"
+        return f"{MARKER} " if pointed else ""

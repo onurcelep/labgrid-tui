@@ -8,13 +8,12 @@ from textual.widgets import Static
 
 WELCOME_LINES = (
     "labgrid-tui is a live view of a labgrid lab: every bench, who holds it, "
-    "what it offers, and for each action the exact labgrid-client command "
-    "line, shown for you to copy.",
-    "It exists so you can see the whole lab at once, learn the CLI by using "
-    "it, and never change anything by accident: it only reads.",
-    "This tour runs on fake data. Keys go to the app as normal; a card "
-    "tells you what to look at and which key to press. n skips a step, q "
-    "quits. Press Enter to start.",
+    "what it offers, and the exact labgrid-client line for each action, "
+    "ready to copy.",
+    "It only reads the coordinator: see the whole lab at once, learn the CLI "
+    "by using it, change nothing by accident.",
+    "This tour runs on fake data. Keys work as usual; a card names the next "
+    "key and an arrow points at what it means. n skips, q quits. Enter starts.",
 )
 
 
@@ -25,7 +24,7 @@ class WelcomeScreen(ModalScreen[None]):
         width: 72;
         max-width: 95%;
         height: auto;
-        border: round $warning;
+        border: round $accent;
         border-title-color: $text;
         border-title-style: bold;
         background: $panel;
