@@ -42,20 +42,19 @@ _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
     ("bench-06", "rpi4", "staging", "lab2", "Spare, no resources wired up yet"),
 )
 
-# Reservation queue on bench-04: alice arrives first and is allocated; mine
-# queues behind hers, waiting, until she releases it (dropped from the
-# coordinator's reservation list entirely, same as a real cancel-reservation
-# or expiry) and mine is promoted to allocated (see _lab_reservations_at).
-# Neither bench the tour ever tells the user to acquire (bench-01, bench-02)
-# carries a reservation, so Acquire is never gated there.
+# bench-04 is reserved by alice for the whole tour (a black dot from the
+# start). My own reservation appears only when the tour has the user queue
+# for alice's bench-03, and is allocated a moment later when alice lets go.
 _MY_TOKEN = "tour-mine-1"
 _ALICE_TOKEN = "tour-alice-1"
 _ALICE = "laptop/alice"
 
 # Cue names the tour can fire, in the order the tour uses them.
+CUE_MINE_ACQUIRES = "mine_acquires"  # takes place=<name>: the bench the user chose
 CUE_ALICE_ACQUIRES = "alice_acquires"
 CUE_SERIAL_OFFLINE = "serial_offline"
 CUE_SERIAL_ONLINE = "serial_online"
+CUE_MINE_QUEUED = "mine_queued"
 CUE_MINE_ALLOCATED = "mine_allocated"
 
 
@@ -109,11 +108,7 @@ def _bench_resources(name: str, index: int) -> list[Resource]:
 
 def _bench_place(name: str) -> Place:
     _, board, env, site, comment = next(m for m in _BENCH_META if m[0] == name)
-    # Static for the place's whole life: bench-04 is reserved throughout
-    # (the queue never empties), and my token is the one that ultimately
-    # gets fulfilled, per _lab_reservations_at. The other benches,
-    # including both the tour ever tells the user to acquire, carry none.
-    reservation = _MY_TOKEN if name == "bench-04" else None
+    reservation = _ALICE_TOKEN if name == "bench-04" else None
     return _place(
         name,
         tags={"board": board, "env": env, "site": site},
@@ -131,12 +126,26 @@ def _lab_initial() -> list[tuple[Place, list[Resource]]]:
     return result
 
 
-def _alice_acquires_bench_03() -> list[Event]:
+def _mine_acquires(place: str = "bench-01", **_ignored: str) -> list[Event]:
+    """The bench the user chose at the acquire step becomes theirs."""
+    if not any(m[0] == place for m in _BENCH_META):
+        place = "bench-01"
+    return [PlaceChanged(replace(_bench_place(place), acquired=current_id()))]
+
+
+def _alice_acquires_bench_03(**_ignored: str) -> list[Event]:
     place = replace(_bench_place("bench-03"), acquired=_ALICE)
     return [PlaceChanged(place)]
 
 
-def _bench_05_serial(*, avail: bool) -> list[Event]:
+def _alice_hands_over_bench_03(**_ignored: str) -> list[Event]:
+    """Alice releases bench-03 and the coordinator allocates it to my
+    queued reservation: the place now carries my token."""
+    place = replace(_bench_place("bench-03"), acquired=None, reservation=_MY_TOKEN)
+    return [PlaceChanged(place)]
+
+
+def _bench_05_serial(*, avail: bool, **_ignored: str) -> list[Event]:
     resource = _resource(
         "bench-05", "serial", "NetworkSerialPort", {"host": EXPORTER, "port": 4005}, avail=avail
     )
@@ -160,24 +169,20 @@ def _reservation(
 
 
 def _lab_reservations(cued: frozenset[str]) -> list[Reservation]:
-    """The bench-04 queue: alice holds the allocation until the tour cues
-    that she released it and mine got promoted; mine is present, waiting,
-    from the start so the Reservations tab always has content."""
-    me = current_id()
-    mine_allocated = CUE_MINE_ALLOCATED in cued
-    reservations: list[Reservation] = []
-    if not mine_allocated:
+    """alice's allocation on bench-04 stands for the whole tour; my own
+    reservation exists once the user has queued for bench-03 (waiting), and
+    is allocated once alice hands the bench over."""
+    reservations = [_reservation(_ALICE, _ALICE_TOKEN, ReservationState.allocated, "bench-04")]
+    if CUE_MINE_QUEUED in cued:
+        allocated = CUE_MINE_ALLOCATED in cued
         reservations.append(
-            _reservation(_ALICE, _ALICE_TOKEN, ReservationState.allocated, "bench-04")
+            _reservation(
+                current_id(),
+                _MY_TOKEN,
+                ReservationState.allocated if allocated else ReservationState.waiting,
+                "bench-03" if allocated else None,
+            )
         )
-    reservations.append(
-        _reservation(
-            me,
-            _MY_TOKEN,
-            ReservationState.allocated if mine_allocated else ReservationState.waiting,
-            "bench-04" if mine_allocated else None,
-        )
-    )
     return reservations
 
 
@@ -206,16 +211,19 @@ def _desk_initial() -> list[tuple[Place, list[Resource]]]:
     ]
 
 
+CueBuilder = Callable[..., list[Event]]
+
+
 @dataclass(frozen=True)
 class FleetScript:
     initial: tuple[tuple[Place, tuple[Resource, ...]], ...]
-    cues: dict[str, Callable[[], list[Event]]]
+    cues: dict[str, CueBuilder]
     reservations: Callable[[frozenset[str]], list[Reservation]]
 
 
 def _script(
     initial: list[tuple[Place, list[Resource]]],
-    cues: dict[str, Callable[[], list[Event]]],
+    cues: dict[str, CueBuilder],
     reservations: Callable[[frozenset[str]], list[Reservation]],
 ) -> FleetScript:
     return FleetScript(
@@ -228,10 +236,12 @@ def _script(
 LAB_SCRIPT = _script(
     _lab_initial(),
     {
+        CUE_MINE_ACQUIRES: _mine_acquires,
         CUE_ALICE_ACQUIRES: _alice_acquires_bench_03,
-        CUE_SERIAL_OFFLINE: lambda: _bench_05_serial(avail=False),
-        CUE_SERIAL_ONLINE: lambda: _bench_05_serial(avail=True),
-        CUE_MINE_ALLOCATED: lambda: [],  # observable through get_reservations()
+        CUE_SERIAL_OFFLINE: lambda **_kw: _bench_05_serial(avail=False),
+        CUE_SERIAL_ONLINE: lambda **_kw: _bench_05_serial(avail=True),
+        CUE_MINE_QUEUED: lambda **_kw: [],  # observable through get_reservations()
+        CUE_MINE_ALLOCATED: _alice_hands_over_bench_03,
     },
     _lab_reservations,
 )
@@ -269,14 +279,15 @@ class ScriptedFleet:
         # coordinator switch tears both fleet sources down the same way.
         await self._stopped.wait()
 
-    def cue(self, name: str) -> bool:
+    def cue(self, name: str, **params: str) -> bool:
         """Emit the events for *name* now. Unknown cues and repeats are
-        no-ops; returns whether anything was emitted."""
+        no-ops; returns whether the cue fired. *params* reach the cue's
+        builder (the acquired bench's name, for instance)."""
         build = self._script.cues.get(name)
         if build is None or name in self._cued or self._on_event is None:
             return False
         self._cued.add(name)
-        for event in build():
+        for event in build(**params):
             self._on_event(event)
         return True
 

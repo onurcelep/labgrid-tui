@@ -20,7 +20,9 @@ from labgrid_tui.coordinator.stream import (
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.fleet import (
     CUE_ALICE_ACQUIRES,
+    CUE_MINE_ACQUIRES,
     CUE_MINE_ALLOCATED,
+    CUE_MINE_QUEUED,
     CUE_SERIAL_OFFLINE,
     CUE_SERIAL_ONLINE,
     DESK_SCRIPT,
@@ -96,21 +98,43 @@ async def test_cues_emit_once_and_only_when_asked() -> None:
         await _stop(fleet, task)
 
 
-async def test_reservation_queue_on_bench_04_resolves_when_cued() -> None:
+async def test_my_reservation_appears_when_queued_and_is_allocated_when_cued() -> None:
     fleet = ScriptedFleet(LAB_SCRIPT)
     events, task = await _run_until_live(fleet)
     try:
         me = current_id()
         before = await fleet.get_reservations()
         assert [(r.owner, r.state) for r in before] == [
+            ("laptop/alice", ReservationState.allocated)
+        ]
+        assert before[0].allocations == {"main": "bench-04"}
+        assert fleet.cue(CUE_MINE_QUEUED) is True
+        queued = await fleet.get_reservations()
+        assert [(r.owner, r.state) for r in queued] == [
             ("laptop/alice", ReservationState.allocated),
             (me, ReservationState.waiting),
         ]
-        assert before[0].allocations == {"main": "bench-04"}
         assert fleet.cue(CUE_MINE_ALLOCATED) is True
         after = await fleet.get_reservations()
-        assert [(r.owner, r.state) for r in after] == [(me, ReservationState.allocated)]
-        assert after[0].allocations == {"main": "bench-04"}
+        assert [(r.owner, r.state) for r in after][1] == (me, ReservationState.allocated)
+        assert after[1].allocations == {"main": "bench-03"}
+        # alice handed bench-03 over: the place now carries my token.
+        handed = [e for e in events if isinstance(e, PlaceChanged) and e.place.name == "bench-03"]
+        assert handed[-1].place.acquired is None
+        assert handed[-1].place.reservation == after[1].token
+    finally:
+        await _stop(fleet, task)
+
+
+async def test_mine_acquires_cue_targets_the_bench_the_user_chose() -> None:
+    fleet = ScriptedFleet(LAB_SCRIPT)
+    events, task = await _run_until_live(fleet)
+    try:
+        assert fleet.cue(CUE_MINE_ACQUIRES, place="bench-02") is True
+        me = current_id()
+        mine = [e for e in events if isinstance(e, PlaceChanged) and e.place.acquired == me]
+        assert [e.place.name for e in mine] == ["bench-02"]
+        assert fleet.cue(CUE_MINE_ACQUIRES, place="bench-01") is False  # a cue fires once
     finally:
         await _stop(fleet, task)
 

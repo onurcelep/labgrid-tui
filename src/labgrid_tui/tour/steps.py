@@ -14,23 +14,25 @@ deterministic and worth asserting on directly in tests.
 
 from collections.abc import Callable
 
-from labgrid_tui.model.commands import CommandEntry
+from labgrid_tui.model.commands import VERB_ACQUIRE, CommandEntry, is_verb
 from labgrid_tui.tour.fleet import (
     CUE_ALICE_ACQUIRES,
+    CUE_MINE_ACQUIRES,
     CUE_MINE_ALLOCATED,
+    CUE_MINE_QUEUED,
     CUE_SERIAL_OFFLINE,
     CUE_SERIAL_ONLINE,
 )
 
 STEP_TEXT: tuple[str, ...] = (
     "Your lab: every bench, its status dot, who holds it, what it offers. Move with j/k.",
-    "Enter opens the bench under the cursor: resources, tags, comment. Esc closes.",
-    "r acquires it. The tour only copies the labgrid-client line it would run.",
-    "c lists this bench's commands, gated by what it has and whether you hold it. "
-    "Enter copies one.",
-    "The lab moved: alice took bench-03, bench-05 lost its serial port. "
-    "See the dots and the log. Press n.",
-    "Move to bench-03 (alice's). c shows no Acquire; enter copies Reserve (queue) instead.",
+    "r gets the bench under the cursor: it queues if needed, then acquires. "
+    "The tour only copies the line.",
+    "c lists this bench's commands; greyed ones say why. Enter copies one.",
+    "Enter on the table opens the bench: resources, tags, comment. Esc closes.",
+    "The lab moved: alice took bench-03 and bench-05 lost its serial port. "
+    "Watch the dots and the log, then press n.",
+    "Move to bench-03 (alice's) and press r: it now reads Queue and acquire. Copy it.",
     "Team recipes: c, then -> to the robot tab. Enter copies one with this bench's "
     "values filled in.",
     "Another lab: shift+p lists your coordinators. Pick desk.",
@@ -42,20 +44,27 @@ DONE_TEXT = (
 )
 
 _STEP_MOVE = 0
-_STEP_DETAIL = 1
-_STEP_ACQUIRE = 2
-_STEP_COMMANDS_COPY = 3
+_STEP_ACQUIRE = 1
+_STEP_COMMANDS_COPY = 2
+_STEP_DETAIL = 3
 _STEP_LAB_CHANGED = 4
-_STEP_RESERVE = 5
+_STEP_QUEUE = 5
 _STEP_ROBOT_PACK = 6
 _STEP_COORDINATORS = 7
 
-# Cues the fleet plays when a step is entered: alice and the serial port
-# right as the panel says the lab changed; the port back and my reservation
-# allocated while the user is busy with the next steps.
+# Cues the fleet plays when a step is entered: the bench the user just got
+# becomes theirs; alice and the serial port move right as the panel says
+# the lab changed; the port returns while the user queues; the queued
+# reservation appears as soon as the user copied the queue line.
 ENTRY_CUES: dict[int, tuple[str, ...]] = {
+    _STEP_COMMANDS_COPY: (CUE_MINE_ACQUIRES,),
     _STEP_LAB_CHANGED: (CUE_ALICE_ACQUIRES, CUE_SERIAL_OFFLINE),
-    _STEP_RESERVE: (CUE_SERIAL_ONLINE,),
+    _STEP_QUEUE: (CUE_SERIAL_ONLINE,),
+    _STEP_ROBOT_PACK: (CUE_MINE_QUEUED,),
+}
+# Fired a moment after the step is entered: alice hands bench-03 over and
+# the queued reservation is allocated while the user reads the next step.
+DELAYED_ENTRY_CUES: dict[int, tuple[str, ...]] = {
     _STEP_ROBOT_PACK: (CUE_MINE_ALLOCATED,),
 }
 
@@ -70,6 +79,8 @@ class TourController:
         self.on_done: Callable[[], None] | None = None
         self._detail_opened = False
         self._initial_place: str | None = None
+        # The bench the user got at the acquire step; the fleet makes it theirs.
+        self.acquired_place: str | None = None
 
     @property
     def done(self) -> bool:
@@ -112,16 +123,19 @@ class TourController:
             self._advance()
 
     def on_copy(self, entry: CommandEntry) -> None:
-        label = entry.template.label
-        category = entry.template.category
+        template = entry.template
+        get_verb = is_verb(template, VERB_ACQUIRE)
         expected = {
-            _STEP_ACQUIRE: label == "Acquire",
-            _STEP_COMMANDS_COPY: category != "robot",
-            _STEP_RESERVE: label == "Reserve (queue)",
-            _STEP_ROBOT_PACK: category == "robot",
+            _STEP_ACQUIRE: get_verb and not template.label.startswith("Queue"),
+            _STEP_COMMANDS_COPY: not get_verb and template.category != "robot",
+            _STEP_QUEUE: get_verb and template.label.startswith("Queue"),
+            _STEP_ROBOT_PACK: template.category == "robot",
         }
-        if expected.get(self.step, False):
-            self._advance()
+        if not expected.get(self.step, False):
+            return
+        if self.step == _STEP_ACQUIRE:
+            self.acquired_place = entry.place
+        self._advance()
 
     def on_coordinator_switch(self, name: str) -> None:
         if self.step == _STEP_COORDINATORS and name == "desk":

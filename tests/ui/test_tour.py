@@ -14,6 +14,7 @@ from textual.widgets import Footer, Input
 
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.model.commands import CommandEntry
+from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.app import TourApp
 from labgrid_tui.tour.steps import STEP_COUNT
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
@@ -141,10 +142,12 @@ async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
 
 async def test_full_story_by_keyboard_alone() -> None:
     app = TourApp()
+    app.delayed_cue_seconds = 0.05
     async with app.run_test(size=(120, 30)) as pilot:
         await _ready(app, pilot)
         panel = _panel(app)
         table = app.screen_stack[0].query_one(DeviceTable)
+        me = current_id()
         log_lines: list[str] = []
         original = app.push_event
 
@@ -161,27 +164,28 @@ async def test_full_story_by_keyboard_alone() -> None:
         assert panel.current_text.startswith("Step 2/")
         assert table.cursor_place() == "bench-02"
 
-        # 2: detail open and close.
-        await pilot.press("enter")
-        await pilot.pause()
-        assert isinstance(app.screen, DetailOverlay)
-        await pilot.press("escape")
-        await pilot.pause()
-        assert panel.current_text.startswith("Step 3/")
-
-        # 3: acquire copies, never runs.
+        # 2: r copies the get line; the fleet then shows the bench as mine.
         await pilot.press("r")
         await pilot.pause()
-        assert panel.current_text.startswith("Step 4/")
+        assert panel.current_text.startswith("Step 3/")
+        assert await _wait_until(pilot, lambda: app.store.places["bench-02"].acquired == me)
 
-        # 4: commands overlay, copy the highlighted entry.
+        # 3: commands overlay on my bench: copy the highlighted entry.
         await pilot.press("c")
         await pilot.pause()
         assert isinstance(app.screen, CommandOverlay)
         await pilot.press("enter")  # copies and closes the overlay
         await pilot.pause()
-        assert panel.current_text.startswith("Step 5/")
+        assert panel.current_text.startswith("Step 4/")
         assert not isinstance(app.screen, CommandOverlay)
+
+        # 4: detail open and close.
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, DetailOverlay)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert panel.current_text.startswith("Step 5/")
 
         # 5: entering it cued alice and the serial port; the fleet reacted.
         assert app.store.places["bench-03"].acquired == "laptop/alice"
@@ -194,7 +198,8 @@ async def test_full_story_by_keyboard_alone() -> None:
         await pilot.pause()
         assert panel.current_text.startswith("Step 6/")
 
-        # 6: on the busy bench, Reserve (queue) is what gets copied.
+        # 6: on alice's bench r reads "Queue and acquire"; every group is
+        # still listed, greyed with the reason.
         assert app.store.resources[("rack-1", "bench-05", "serial")].avail is True
         await pilot.press("j")
         await pilot.pause()
@@ -204,28 +209,26 @@ async def test_full_story_by_keyboard_alone() -> None:
         overlay = app.screen
         assert isinstance(overlay, CommandOverlay)
         entries = _overlay_entries(overlay)
-        labels = [e.template.label for e in entries]
-        assert "Reserve (queue)" in labels
-        assert "Acquire" not in labels  # held by alice: nothing to acquire
+        labels = {e.template.label: e for e in entries}
+        assert "Queue and acquire" in labels
+        assert labels["Serial console"].reason == "held by alice"
         await pilot.press("escape")
         await pilot.pause()
-        app.runner.copy(next(e for e in entries if e.template.label == "Reserve (queue)"))
+        await pilot.press("r")
         await pilot.pause()
         assert panel.current_text.startswith("Step 7/")
 
-        # 7: the robot pack tab; my reservation was allocated on entry.
-        assert (
-            await _wait_until(
-                pilot,
-                lambda: any(
-                    r.owner != "laptop/alice" and r.state.name == "allocated"
-                    for r in app.store.reservations
-                ),
-                timeout=1.0,
-            )
-            or True
-        )  # the poll timer is 10 s; the source state is what matters:
-        assert any(r.state.name == "allocated" for r in await app.fleet_source.get_reservations())
+        # 7: my reservation was queued on entry and allocated a moment later.
+        assert await _wait_until(
+            pilot, lambda: app.store.places["bench-03"].reservation == "tour-mine-1", timeout=3.0
+        )
+        assert await _wait_until(
+            pilot,
+            lambda: any(
+                r.owner == me and r.state.name == "allocated" for r in app.store.reservations
+            ),
+            timeout=3.0,
+        )
         await pilot.press("c")
         await pilot.pause()
         overlay = app.screen
