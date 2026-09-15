@@ -6,7 +6,7 @@ ActionRunner, in-memory config/coordinators/packs/ui-state injection)
 instead of forking the dashboard: the tour is a thin subclass, not a
 parallel implementation. Its own chrome is a welcome card, a floating step
 card over the fleet table, the same step text inside any modal on top, and
-an outline around whatever the step asks the user to look at.
+an arrow next to whatever the step is about.
 """
 
 import contextlib
@@ -23,13 +23,23 @@ from labgrid_tui.coordinators import CoordinatorEntry, Coordinators
 from labgrid_tui.tour.fleet import ScriptedFleet, fleet_source_factory
 from labgrid_tui.tour.pack import load_robot_pack
 from labgrid_tui.tour.runner import TourActionRunner
-from labgrid_tui.tour.steps import DELAYED_ENTRY_CUES, ENTRY_CUES, TourController
+from labgrid_tui.tour.steps import (
+    DELAYED_ENTRY_CUES,
+    ENTRY_CUES,
+    POINT_LOG,
+    POINT_STATUS,
+    POINT_TABLE,
+    TourController,
+)
 from labgrid_tui.tour.welcome import WelcomeScreen
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.app import LabgridTuiApp
-from labgrid_tui.ui.guidance import FOCUS_CLASS, TourGuidance
+from labgrid_tui.ui.guidance import MARKER, TourGuidance
 from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
 from labgrid_tui.ui.uistate import UiState
+from labgrid_tui.ui.widgets.activity_log import ActivityLog
+from labgrid_tui.ui.widgets.device_table import DeviceTable
+from labgrid_tui.ui.widgets.status_bar import StatusBar
 from labgrid_tui.ui.widgets.tour_card import CARD_TOP, CARD_WIDTH, TourCard
 
 SUB_TITLE = "TOUR (fake data)"
@@ -38,9 +48,6 @@ DESK_ADDRESS = "tour:desk"
 
 # Delay before a step's "a moment later" cue (see steps.DELAYED_ENTRY_CUES).
 DELAYED_CUE_SECONDS = 2.5
-
-# Dashboard widgets a step may ask the user to look at (ids without "#").
-_DASHBOARD_FOCUS_IDS = ("fleet-table", "activity-log", "status-bar")
 
 
 def _tour_config() -> Config:
@@ -109,12 +116,16 @@ class TourDashboardScreen(DashboardScreen):
         super().on_resize(event)
         self.place_card()
 
-    def set_focus_frame(self, target: str | None) -> None:
-        for widget_id in _DASHBOARD_FOCUS_IDS:
-            try:
-                self.query_one(f"#{widget_id}").set_class(widget_id == target, FOCUS_CLASS)
-            except NoMatches:
-                continue
+    def set_marker(self, target: str | None) -> None:
+        """Put the tour pointer on the table's cursor row, the activity log,
+        the status bar, or nowhere."""
+        with contextlib.suppress(NoMatches):
+            self.query_one(DeviceTable).set_pointer(MARKER if target == POINT_TABLE else None)
+        with contextlib.suppress(NoMatches):
+            log = self.query_one(ActivityLog)
+            log.border_title = f"{MARKER} activity" if target == POINT_LOG else ""
+        with contextlib.suppress(NoMatches):
+            self.query_one(StatusBar).set_marker(MARKER if target == POINT_STATUS else "")
 
 
 class TourApp(LabgridTuiApp):
@@ -183,7 +194,7 @@ class TourApp(LabgridTuiApp):
             return None
         return TourGuidance(
             text=f"{self._controller.title()}: {self._controller.label()}",
-            focus=self._controller.modal_focus(),
+            target=self._controller.modal_target(),
         )
 
     def on_mount(self) -> None:
@@ -193,7 +204,7 @@ class TourApp(LabgridTuiApp):
     def _start_tour(self, _result: None) -> None:
         self.started = True
         self.dashboard.show_card()
-        self.dashboard.set_focus_frame(self._controller.dashboard_focus())
+        self.dashboard.set_marker(self._controller.dashboard_marker())
 
     def _on_tour_hook(self, name: str, detail: str) -> None:
         if name == "cursor_changed":
@@ -207,7 +218,7 @@ class TourApp(LabgridTuiApp):
         with contextlib.suppress(NoMatches):
             self.dashboard.query_one(TourCard).refresh_text()
         self.dashboard.place_card()
-        self.dashboard.set_focus_frame(self._controller.dashboard_focus())
+        self.dashboard.set_marker(self._controller.dashboard_marker())
         update = getattr(self.screen, "update_guidance", None)
         if callable(update):
             update(self.guidance())

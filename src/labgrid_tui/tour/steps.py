@@ -1,6 +1,6 @@
 """Step sequencer for `labgrid-tui tour`.
 
-Each step names one thing worth knowing and the one key that shows it. The
+Each step says one thing worth knowing and the key that shows it. The
 controller advances on hooks from the dashboard, the action runner and the
 app; it never binds keys of its own. Entering a step may fire a cue on the
 scripted fleet (see ``ENTRY_CUES``) so the lab visibly reacts at the moment
@@ -25,25 +25,20 @@ from labgrid_tui.tour.fleet import (
 )
 
 STEP_TEXT: tuple[str, ...] = (
-    "Look at the table: every bench, its status dot, who holds it and what it "
-    "offers. Move with j/k.",
-    "Look at the bench under the cursor. r gets it: queue if needed, then acquire, "
-    "in one copied line.",
-    "Look at the command list: c shows every command for this bench; greyed ones "
-    "say why. Enter copies one.",
-    "Look at the bench itself: Enter opens its resources, tags and comment. Esc closes.",
-    "Look at the activity log: alice took bench-03 and bench-05 lost its serial "
-    "port. Then press n.",
-    "Look at bench-03, alice's: move there and press r. It now reads Queue and acquire; copy it.",
-    "Look at the robot tab: c, then Right. Team recipes, with this bench's values "
-    "filled in. Enter copies one.",
-    "Look at the status bar: shift+p lists your coordinators. Pick desk.",
+    "Every bench, its status dot, who holds it, what it offers. j/k moves.",
+    "r gets the bench under the cursor: queue if needed, then acquire, as one copied line.",
+    "c lists every command for this bench; greyed ones say why. Enter copies one.",
+    "Enter opens the bench: resources, tags, comment. Esc closes.",
+    "The lab moved: alice took bench-03, bench-05 lost its serial port. "
+    "The log shows it. n continues.",
+    "Move to bench-03, alice's, and press r. It queues you; when alice releases, "
+    "the same line acquires it. Watch the log.",
+    "Team recipes: c, then Right to the robot tab. This bench's values are filled in. "
+    "Enter copies one.",
+    "shift+p lists your coordinators. Pick desk.",
 )
 STEP_COUNT = len(STEP_TEXT)
-DONE_TEXT = (
-    "That is the tour. Point it at your lab: labgrid-tui -x host:20408. "
-    "shift+p brings you back to lab; q quits."
-)
+DONE_TEXT = "End of the tour. Try it on your lab: labgrid-tui -x host:20408. q quits."
 DONE_TITLE = "TOUR done"
 
 _STEP_MOVE = 0
@@ -71,24 +66,29 @@ DELAYED_ENTRY_CUES: dict[int, tuple[str, ...]] = {
     _STEP_ROBOT_PACK: (CUE_MINE_ALLOCATED,),
 }
 
-# What to outline while a step is active: on the dashboard, and inside the
-# modal that step opens (if any). Ids without the leading "#".
-DASHBOARD_FOCUS: dict[int, str] = {
-    _STEP_MOVE: "fleet-table",
-    _STEP_ACQUIRE: "fleet-table",
-    _STEP_COMMANDS_COPY: "fleet-table",
-    _STEP_DETAIL: "fleet-table",
-    _STEP_LAB_CHANGED: "activity-log",
-    _STEP_QUEUE: "fleet-table",
-    _STEP_ROBOT_PACK: "fleet-table",
-    _STEP_COORDINATORS: "status-bar",
+# Where the pointer sits while a step is active: on the dashboard (the
+# cursor row of the table, the activity log, the status bar) and inside the
+# modal the step opens, in that screen's own terms (see TourGuidance).
+POINT_TABLE = "table"
+POINT_LOG = "log"
+POINT_STATUS = "status"
+
+DASHBOARD_MARKER: dict[int, str] = {
+    _STEP_MOVE: POINT_TABLE,
+    _STEP_ACQUIRE: POINT_TABLE,
+    _STEP_COMMANDS_COPY: POINT_TABLE,
+    _STEP_DETAIL: POINT_TABLE,
+    _STEP_LAB_CHANGED: POINT_LOG,
+    _STEP_QUEUE: POINT_TABLE,
+    _STEP_ROBOT_PACK: POINT_TABLE,
+    _STEP_COORDINATORS: POINT_STATUS,
 }
-MODAL_FOCUS: dict[int, str] = {
-    _STEP_COMMANDS_COPY: "overlay-tabs",
-    _STEP_DETAIL: "detail-modal",
-    _STEP_QUEUE: "overlay-tabs",
-    _STEP_ROBOT_PACK: "overlay-tabs",
-    _STEP_COORDINATORS: "coord-modal",
+MODAL_TARGET: dict[int, str] = {
+    _STEP_COMMANDS_COPY: "*",
+    _STEP_DETAIL: "title",
+    _STEP_QUEUE: "Manage",
+    _STEP_ROBOT_PACK: "robot",
+    _STEP_COORDINATORS: "desk",
 }
 
 
@@ -119,11 +119,11 @@ class TourController:
             return DONE_TITLE
         return f"TOUR {self.step + 1}/{STEP_COUNT}"
 
-    def dashboard_focus(self) -> str | None:
-        return None if self.done else DASHBOARD_FOCUS.get(self.step)
+    def dashboard_marker(self) -> str | None:
+        return None if self.done else DASHBOARD_MARKER.get(self.step)
 
-    def modal_focus(self) -> str | None:
-        return None if self.done else MODAL_FOCUS.get(self.step)
+    def modal_target(self) -> str | None:
+        return None if self.done else MODAL_TARGET.get(self.step)
 
     def _advance(self) -> None:
         self.step += 1

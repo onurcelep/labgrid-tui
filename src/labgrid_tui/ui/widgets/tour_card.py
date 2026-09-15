@@ -21,7 +21,7 @@ class TourCard(Static):
         layer: tour;
         width: 44;
         height: auto;
-        border: round $warning;
+        border: round $accent;
         border-title-color: $text;
         border-title-style: bold;
         background: $panel;

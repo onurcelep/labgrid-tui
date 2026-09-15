@@ -18,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, ListItem, ListView, Static
 
 from labgrid_tui.coordinators import CoordinatorEntry
-from labgrid_tui.ui.guidance import FOCUS_CLASS, GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance, mark
 
 
 @dataclass(frozen=True)
@@ -113,8 +113,7 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
             items: list[ListItem] = []
             initial_index = 0
             for idx, entry in enumerate(self._entries):
-                marker = " *" if entry.name == self._current else ""
-                items.append(ListItem(Label(f"{entry.name}{marker}  {entry.address}")))
+                items.append(ListItem(Label(self._row_text(entry))))
                 if entry.name == self._current:
                     initial_index = idx
             yield ListView(*items, id="coord-list", initial_index=initial_index)
@@ -165,7 +164,7 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         self.dismiss(None)
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the outlined widget."""
+        """Tour sideband: refresh the guidance line and the pointed row."""
         self._guidance = guidance
         try:
             line = self.query_one("#coord-hint-tour", Static)
@@ -177,8 +176,12 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         # it, so a small terminal keeps its rows for the content.
         with contextlib.suppress(NoMatches):
             self.query_one("#coord-hint", Static).set_class(guidance is not None, "hidden")
-        for outlined in self.query(f".{FOCUS_CLASS}"):
-            outlined.remove_class(FOCUS_CLASS)
-        if guidance is not None and guidance.focus:
-            with contextlib.suppress(NoMatches):
-                self.query_one(f"#{guidance.focus}").add_class(FOCUS_CLASS)
+        for label, entry in zip(self.query(Label), self._entries, strict=False):
+            label.update(self._row_text(entry))
+
+    def _row_text(self, entry: CoordinatorEntry) -> str:
+        current = " *" if entry.name == self._current else ""
+        text = f"{entry.name}{current}  {entry.address}"
+        if self._guidance is None:
+            return text
+        return mark(text, self._guidance.target == entry.name)

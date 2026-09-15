@@ -69,6 +69,12 @@ class StatusBar(Static):
     def __init__(self, segments: Sequence[Segment]) -> None:
         super().__init__("", id="status-bar")
         self._segments = list(segments)
+        # Tour pointer shown in front of the first segment (the coordinator).
+        self.marker = ""
+
+    def set_marker(self, marker: str) -> None:
+        self.marker = marker
+        self.refresh_status()
 
     def on_resize(self, _event: events.Resize) -> None:
         # The bar's own width just changed; a stale render from before the
@@ -82,6 +88,8 @@ class StatusBar(Static):
     def _render_line(self) -> str:
         width = self.content_size.width
         texts: list[str | None] = [_call_provider(segment.provider) for segment in self._segments]
+        if self.marker and texts and texts[0] is not None:
+            texts[0] = f"{self.marker} {texts[0]}"
         if width <= 0:
             return _join(texts)
 
