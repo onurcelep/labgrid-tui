@@ -16,8 +16,9 @@ with or endorsed by the labgrid project or its maintainers.
   the coordinator's own event stream; no polling.
 - **Every action is a real command line**: console, power, SSH, file
   transfer, SD-mux, video, acquire, release, shown as the exact
-  `labgrid-client` invocation for that bench and gated by what the bench
-  has and whether you hold it.
+  `labgrid-client` invocation for that bench; what you cannot do right now
+  is greyed with the reason. `r` gets a bench in one line, queueing when
+  it is busy.
 - **Several coordinators**: named entries, switched at runtime
   (`shift+p`) or from the CLI.
 - **Shareable command packs**: a team's recipes in a small TOML file,

@@ -22,7 +22,7 @@ from labgrid_tui.coordinators import (
     validate_name,
 )
 from labgrid_tui.exec_.runner import client_available
-from labgrid_tui.model.commands import CommandEntry, EntryState, evaluate
+from labgrid_tui.model.commands import CommandEntry, EntryState, evaluate, is_verb
 from labgrid_tui.model.events import Kind
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import evaluate_pack
@@ -396,15 +396,11 @@ class DashboardScreen(Screen[None]):
         # would drown it out. Failures still toast per item either way.
         notify_success = len(targets) == 1
         for name in targets:
-            # Scoped to built-in entries (copy_only is False only for
-            # those): a pack entry labelled "Acquire"/"Release" must never
-            # satisfy this lookup and get dispatched as the real verb.
+            # is_verb recognises the built-in verbs only (the acquire verb
+            # by its requires, since its label follows the place state);
+            # a pack entry can never satisfy this lookup.
             entry = next(
-                (
-                    e
-                    for e in self._entries_for(name)
-                    if not e.template.copy_only and e.template.label == label
-                ),
+                (e for e in self._entries_for(name) if is_verb(e.template, label)),
                 None,
             )
             if entry is None:
