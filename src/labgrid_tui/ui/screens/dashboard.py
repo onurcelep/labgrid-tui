@@ -78,8 +78,10 @@ TourHook = Callable[[str, str], None]
 class DashboardScreen(Screen[None]):
     DEFAULT_CSS = """
     DashboardScreen { layout: vertical; }
-    #status-bar { dock: top; height: 1; padding: 0 1; background: $panel; color: $text; }
-    #filter-bar { dock: top; }
+    /* Header docks top on its own; nothing else may dock to the same edge:
+       Textual overlays same-edge docks instead of stacking them. */
+    #status-bar { height: 1; padding: 0 1; background: $panel; color: $text; }
+    #filter-bar { height: auto; }
     #main-row { height: 1fr; }
     #fleet-table { height: 1fr; min-height: 5; }
     #activity-log { height: 30%; min-height: 4; max-height: 12; border-top: solid $primary; }
