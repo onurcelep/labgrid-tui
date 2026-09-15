@@ -27,6 +27,7 @@ from labgrid_tui.model.events import Kind
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import evaluate_pack
 from labgrid_tui.ui.actions import ActionRunner
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
 from labgrid_tui.ui.layout import MIN_HEIGHT, MIN_WIDTH, is_narrow, too_small
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
@@ -73,10 +74,13 @@ _CONN_LABEL = {
 # (event name, detail) -> the tour's step sequencer, e.g. ("detail_open",
 # place_name). See labgrid_tui.tour.steps.TourController.
 TourHook = Callable[[str, str], None]
+# () -> the guidance the next pushed screen should show; None outside the tour.
+GuidanceProvider = Callable[[], TourGuidance | None]
 
 
 class DashboardScreen(Screen[None]):
-    DEFAULT_CSS = """
+    DEFAULT_CSS = (
+        """
     DashboardScreen { layout: vertical; }
     /* Header docks top on its own; nothing else may dock to the same edge:
        Textual overlays same-edge docks instead of stacking them. */
@@ -99,6 +103,8 @@ class DashboardScreen(Screen[None]):
        width for the title in a narrow terminal. */
     DashboardScreen.-narrow Header HeaderClock { display: none; }
     """
+        + GUIDANCE_CSS
+    )
 
     # FilterBar is the first focusable widget in compose order; without this,
     # Textual's default auto-focus grabs it on mount even while it is hidden
@@ -126,6 +132,7 @@ class DashboardScreen(Screen[None]):
         persist: Callable[[], None],
         *,
         tour_hook: TourHook | None = None,
+        guidance_provider: GuidanceProvider | None = None,
     ) -> None:
         super().__init__()
         self._runner = runner
@@ -140,6 +147,7 @@ class DashboardScreen(Screen[None]):
         # marks, detail, commands overlay) without this screen knowing
         # anything about tour state.
         self._tour_hook = tour_hook
+        self._guidance_provider = guidance_provider
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -307,8 +315,12 @@ class DashboardScreen(Screen[None]):
         if self._tour_hook is not None:
             self._tour_hook("detail_open", place_name)
         self.app.push_screen(
-            DetailOverlay(place_name, self._runner), callback=self._on_detail_dismissed
+            DetailOverlay(place_name, self._runner, guidance=self._guidance()),
+            callback=self._on_detail_dismissed,
         )
+
+    def _guidance(self) -> TourGuidance | None:
+        return None if self._guidance_provider is None else self._guidance_provider()
 
     def _on_detail_dismissed(self, _result: None) -> None:
         if self._tour_hook is not None:
@@ -345,6 +357,7 @@ class DashboardScreen(Screen[None]):
                 self._runner,
                 category=category,
                 prefix=getattr(self.app, "prefix", None),
+                guidance=self._guidance(),
             )
         )
 
@@ -537,7 +550,7 @@ class DashboardScreen(Screen[None]):
             return
         entries = sorted(coordinators.entries.values(), key=lambda e: e.name)
         self.app.push_screen(
-            CoordinatorSelector(entries, coordinators.current),
+            CoordinatorSelector(entries, coordinators.current, guidance=self._guidance()),
             callback=self._on_coordinator_selector_result,
         )
 
