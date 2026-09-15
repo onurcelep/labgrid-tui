@@ -17,6 +17,7 @@ from collections.abc import Callable
 from labgrid_tui.model.commands import VERB_ACQUIRE, CommandEntry, is_verb
 from labgrid_tui.tour.fleet import (
     CUE_ALICE_ACQUIRES,
+    CUE_MINE_ACQUIRED,
     CUE_MINE_ACQUIRES,
     CUE_MINE_ALLOCATED,
     CUE_MINE_QUEUED,
@@ -60,10 +61,12 @@ ENTRY_CUES: dict[int, tuple[str, ...]] = {
     _STEP_QUEUE: (CUE_SERIAL_ONLINE,),
     _STEP_ROBOT_PACK: (CUE_MINE_QUEUED,),
 }
-# Fired a moment after the step is entered: alice hands bench-03 over and
-# the queued reservation is allocated while the user reads the next step.
-DELAYED_ENTRY_CUES: dict[int, tuple[str, ...]] = {
-    _STEP_ROBOT_PACK: (CUE_MINE_ALLOCATED,),
+# Fired after the step is entered, at multiples of the app's delay unit:
+# alice releases bench-03 and my queued reservation is allocated, then
+# the copied one-liner completes and the bench is mine. The user watches
+# the log tell that story while reading the next step.
+DELAYED_ENTRY_CUES: dict[int, tuple[tuple[int, str], ...]] = {
+    _STEP_ROBOT_PACK: ((1, CUE_MINE_ALLOCATED), (2, CUE_MINE_ACQUIRED)),
 }
 
 # Where the pointer sits while a step is active: on the dashboard (the

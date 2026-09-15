@@ -8,6 +8,7 @@ only when its own guard matches the current step.
 from labgrid_tui.model.commands import GET, CommandEntry, CommandTemplate, EntryState
 from labgrid_tui.tour.fleet import (
     CUE_ALICE_ACQUIRES,
+    CUE_MINE_ACQUIRED,
     CUE_MINE_ACQUIRES,
     CUE_MINE_ALLOCATED,
     CUE_MINE_QUEUED,
@@ -147,7 +148,7 @@ def test_entry_cues_fire_the_lab_reaction_when_the_steps_talk_about_it() -> None
     assert CUE_ALICE_ACQUIRES in ENTRY_CUES[4]
     assert CUE_SERIAL_ONLINE in ENTRY_CUES[5]
     assert ENTRY_CUES[6] == (CUE_MINE_QUEUED,)
-    assert DELAYED_ENTRY_CUES[6] == (CUE_MINE_ALLOCATED,)
+    assert DELAYED_ENTRY_CUES[6] == ((1, CUE_MINE_ALLOCATED), (2, CUE_MINE_ACQUIRED))
 
 
 def test_every_trigger_advances_by_at_most_one_step_from_any_position() -> None:

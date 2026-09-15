@@ -46,7 +46,7 @@ SUB_TITLE = "TOUR (fake data)"
 LAB_ADDRESS = "tour:lab"
 DESK_ADDRESS = "tour:desk"
 
-# Delay before a step's "a moment later" cue (see steps.DELAYED_ENTRY_CUES).
+# Unit of delay for a step's follow-on cues (see steps.DELAYED_ENTRY_CUES).
 DELAYED_CUE_SECONDS = 2.5
 
 
@@ -226,8 +226,8 @@ class TourApp(LabgridTuiApp):
     def _on_step_entered(self, step: int) -> None:
         for cue in ENTRY_CUES.get(step, ()):
             self._cue(cue)
-        for cue in DELAYED_ENTRY_CUES.get(step, ()):
-            self.set_timer(self.delayed_cue_seconds, lambda cue=cue: self._cue(cue))
+        for multiple, cue in DELAYED_ENTRY_CUES.get(step, ()):
+            self.set_timer(self.delayed_cue_seconds * multiple, lambda cue=cue: self._cue(cue))
 
     delayed_cue_seconds: float = DELAYED_CUE_SECONDS
 

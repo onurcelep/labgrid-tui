@@ -20,6 +20,7 @@ from labgrid_tui.coordinator.stream import (
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.fleet import (
     CUE_ALICE_ACQUIRES,
+    CUE_MINE_ACQUIRED,
     CUE_MINE_ACQUIRES,
     CUE_MINE_ALLOCATED,
     CUE_MINE_QUEUED,
@@ -122,6 +123,15 @@ async def test_my_reservation_appears_when_queued_and_is_allocated_when_cued() -
         handed = [e for e in events if isinstance(e, PlaceChanged) and e.place.name == "bench-03"]
         assert handed[-1].place.acquired is None
         assert handed[-1].place.reservation == after[1].token
+        # The one-liner completes: the bench is acquired by me, the
+        # reservation moves to acquired and keeps its allocation.
+        assert fleet.cue(CUE_MINE_ACQUIRED) is True
+        final = await fleet.get_reservations()
+        assert [(r.owner, r.state) for r in final][1] == (me, ReservationState.acquired)
+        assert final[1].allocations == {"main": "bench-03"}
+        taken = [e for e in events if isinstance(e, PlaceChanged) and e.place.name == "bench-03"]
+        assert taken[-1].place.acquired == me
+        assert taken[-1].place.reservation == after[1].token
     finally:
         await _stop(fleet, task)
 
