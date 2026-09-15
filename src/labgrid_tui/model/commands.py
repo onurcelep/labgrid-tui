@@ -3,8 +3,10 @@
 Every entry is a real labgrid-client command line. Templates with
 needs_args=True contain <placeholders> and are copy-only. Resource templates
 are keyed by resource class; a class with no resource matched to the place
-produces no entries, and no resource commands appear at all until the place
-is held (acquired or reserved).
+produces no entries. Every other entry is always listed: what the user
+cannot do right now is shown greyed with the reason (who holds the place,
+that it must be held first, that the resource is offline) rather than
+hidden, so a bench's full command set is visible at a glance.
 """
 
 import enum
@@ -23,6 +25,10 @@ ANY_ONLINE = frozenset({"any-online"})
 # Reserve (queue) gating: the inverse of acquiring, runnable exactly when
 # the place is already spoken for by someone else.
 QUEUE = frozenset({"queue"})
+# The unified "get this bench" verb: reserve, wait for the allocation and
+# acquire it in one line, so one key works whether the bench is free
+# (allocated at once) or busy (queued). See get_command_line.
+GET = frozenset({"get"})
 
 
 @dataclass(frozen=True)
@@ -54,6 +60,9 @@ class CommandEntry:
     command_line: str
     state: EntryState
     reason: str | None
+    # The place this entry acts on; None for entries that are not about a
+    # particular place (reservation-level ones, global ones).
+    place: str | None = None
 
 
 # Group (tab) order. Reservations follows Manage: it holds the user's
@@ -71,30 +80,62 @@ GROUP_ORDER: tuple[str, ...] = (
     "Info",
 )
 
-# Manage: what you can do to the place itself. "Reserve (queue)" is always
-# offered alongside Acquire/Release: its own requires computes whether
-# queueing makes sense (see _reserve_reason), so both buckets carry it.
+# Manage: what you can do to the place itself. Every entry is always
+# listed; each computes its own runnability from the place state.
+VERB_ACQUIRE = "Acquire"
+VERB_RELEASE = "Release"
+# copy_only: the line uses command substitution, and the runner executes
+# without a shell on purpose (a place name from the coordinator must never
+# be able to inject into a shell), so this line is always copied.
+GET_TEMPLATE = CommandTemplate(
+    "Manage",
+    VERB_ACQUIRE,
+    "reserve --wait --shell name=<PLACE> | acquire",
+    requires=GET,
+    copy_only=True,
+)
 _RESERVE_TEMPLATE = CommandTemplate(
     "Manage", "Reserve (queue)", "reserve name=<PLACE>", requires=QUEUE
 )
-MANAGE_HELD: tuple[CommandTemplate, ...] = (
+MANAGE: tuple[CommandTemplate, ...] = (
+    GET_TEMPLATE,
+    CommandTemplate("Manage", "Acquire now (no queue)", "acquire", requires=FREE | ANY_ONLINE),
+    CommandTemplate("Manage", VERB_RELEASE, "release", requires=USABLE),
     CommandTemplate(
         "Manage", "Allow user", "allow <host>/<user>", needs_args=True, requires=USABLE
     ),
-    CommandTemplate("Manage", "Release", "release", requires=USABLE),
     _RESERVE_TEMPLATE,
 )
-MANAGE_FREE: tuple[CommandTemplate, ...] = (
-    CommandTemplate("Manage", "Acquire", "acquire", requires=FREE | ANY_ONLINE),
-    _RESERVE_TEMPLATE,
-)
+# Kept for callers that grouped Manage entries by place state before every
+# entry was always listed.
+MANAGE_HELD = MANAGE
+MANAGE_FREE = MANAGE
 INFO_TEMPLATES: tuple[CommandTemplate, ...] = (
     CommandTemplate("Info", "Device info", "show"),
     CommandTemplate("Info", "Export env", "env"),
 )
-# Kept for callers that want "every place-level template" regardless of
-# state (tests, docs); evaluate() picks the state-appropriate subset.
-PLACE_TEMPLATES: tuple[CommandTemplate, ...] = MANAGE_FREE + MANAGE_HELD + INFO_TEMPLATES
+PLACE_TEMPLATES: tuple[CommandTemplate, ...] = MANAGE + INFO_TEMPLATES
+
+
+def is_verb(template: CommandTemplate, verb: str) -> bool:
+    """Whether *template* is the built-in place verb *verb* (VERB_ACQUIRE
+    or VERB_RELEASE). The acquire verb's label changes with the place
+    state, so it is recognised by its requires (which no pack entry can
+    carry), never by its label."""
+    if verb == VERB_ACQUIRE:
+        return "get" in template.requires
+    return not template.copy_only and template.label == verb and template.category == "Manage"
+
+
+def get_command_line(prefix: str, place_name: str) -> str:
+    """One line that queues for *place_name*, waits for the allocation and
+    acquires it: `reserve --wait --shell` prints `export LG_TOKEN=<token>`
+    and `-p +<token>` selects the allocated place. A free place is
+    allocated at once, so the same line serves both cases. Command
+    substitution and cut behave the same in bash, zsh and fish."""
+    return (
+        f"{prefix} -p +$({prefix} reserve --wait --shell name={place_name} | cut -d= -f2) acquire"
+    )
 
 
 def _t(
@@ -248,7 +289,7 @@ def _acquire_reason(place: Place, me: str, reservations: list[Reservation] | Non
     exists whose owner is not the caller; the owner's own acquire is
     otherwise allowed once allocated, but blocked while still waiting."""
     if place.acquired:
-        return f"already acquired by {place.acquired}"
+        return f"held by {_short_user(place.acquired)}"
     if not place.reservation:
         return None
     reservation = find_reservation(place.reservation, reservations)
@@ -290,6 +331,13 @@ def _entry(
     all_resources_offline: bool = False,
     reservations: list[Reservation] | None = None,
 ) -> CommandEntry:
+    if "get" in template.requires:
+        command_line = get_command_line(prefix, place.name)
+        template, get_reason = _get_label_and_reason(
+            template, place, me, all_resources_offline, reservations
+        )
+        get_state = EntryState.RUNNABLE if get_reason is None else EntryState.UNAVAILABLE
+        return CommandEntry(template, command_line, get_state, get_reason, place=place.name)
     if "queue" in template.requires:
         # `reserve` takes a filter, not `-p PLACE`: labgrid-client resolves
         # the place from `name=<PLACE>` among the reserve filters, not from
@@ -307,11 +355,55 @@ def _entry(
     elif "any-online" in template.requires and all_resources_offline:
         reason = "all resources offline"
     elif "usable-by-me" in template.requires and access is not Access.USABLE:
-        reason = access_reason(access, place, me)
+        reason = _hold_reason(place, access, me, reservations)
     elif "resource-online" in template.requires and resource_online is False:
         reason = "resource offline"
     state = EntryState.RUNNABLE if reason is None else EntryState.UNAVAILABLE
-    return CommandEntry(template, command_line, state, reason)
+    return CommandEntry(template, command_line, state, reason, place=place.name)
+
+
+def _hold_reason(
+    place: Place, access: Access, me: str, reservations: list[Reservation] | None
+) -> str | None:
+    """Why a command that needs the place held cannot run: someone else
+    holds it, someone else has it reserved, or it simply must be acquired
+    first."""
+    if access is Access.NOT_ACQUIRED and place.reservation:
+        reservation = find_reservation(place.reservation, reservations)
+        if reservation is not None and reservation.owner != me:
+            return f"reserved by {_short_user(reservation.owner)}"
+    return access_reason(access, place, me)
+
+
+def _short_user(user_id: str) -> str:
+    return user_id.partition("/")[2] or user_id
+
+
+def _get_label_and_reason(
+    template: CommandTemplate,
+    place: Place,
+    me: str,
+    all_resources_offline: bool,
+    reservations: list[Reservation] | None,
+) -> tuple[CommandTemplate, str | None]:
+    """The acquire verb's label follows the place: "Acquire" when the line
+    will allocate at once, "Queue and acquire" when someone else holds or
+    has reserved it. Unavailable only when the bench is already usable by
+    me or has nothing online to acquire."""
+    if place.acquired == me:
+        return template, "already yours"
+    if me in place.allowed:
+        return template, "usable via allow"
+    if all_resources_offline:
+        return template, "all resources offline"
+    reservation = find_reservation(place.reservation, reservations) if place.reservation else None
+    if reservation is not None and reservation.owner == me:
+        if reservation.state is ReservationState.waiting:
+            return replace(template, label="Acquire (your reservation is waiting)"), None
+        return template, None
+    if place.acquired or place.reservation:
+        return replace(template, label="Queue and acquire"), None
+    return template, None
 
 
 def reservation_entries(
@@ -375,14 +467,7 @@ def evaluate(
     reservations: list[Reservation] | None = None,
 ) -> list[CommandEntry]:
     access = place_access(place, me)
-    # A place someone holds (acquired) or has queued for (reserved) exposes
-    # its operational commands; a free place only offers to be acquired.
-    held = bool(place.acquired) or bool(place.reservation)
-    # Acquire is only ever offered while nobody holds the place outright;
-    # Reserve is offered either way (both buckets carry it, see
-    # _RESERVE_TEMPLATE) and computes its own runnability from place state.
-    manage = MANAGE_HELD if place.acquired else MANAGE_FREE
-    place_templates = manage + INFO_TEMPLATES + tuple(extra_place or ())
+    place_templates = MANAGE + INFO_TEMPLATES + tuple(extra_place or ())
     all_resources_offline = bool(resources) and not any(r.avail for r in resources)
     entries = [
         _entry(t, place, access, me, prefix, None, all_resources_offline, reservations)
@@ -391,8 +476,6 @@ def evaluate(
     # Reservation-level entries (cancel / acquire-once-allocated) are
     # independent of the cursor place: they belong to *me*, not to `place`.
     entries.extend(reservation_entries(reservations, me, prefix))
-    if not held:
-        return entries
 
     by_cls: dict[str, list[Resource]] = {}
     for resource in resources:
@@ -415,9 +498,19 @@ def evaluate(
                 # cannot silently pick the wrong one, and validity tracking
                 # that specific resource's availability.
                 entries.extend(
-                    _entry(_for_resource(template, r.name), place, access, me, prefix, r.avail)
+                    _entry(
+                        _for_resource(template, r.name),
+                        place,
+                        access,
+                        me,
+                        prefix,
+                        r.avail,
+                        reservations=reservations,
+                    )
                     for r in matched
                 )
             else:
-                entries.append(_entry(template, place, access, me, prefix, online))
+                entries.append(
+                    _entry(template, place, access, me, prefix, online, reservations=reservations)
+                )
     return entries

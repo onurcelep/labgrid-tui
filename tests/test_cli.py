@@ -682,3 +682,22 @@ def test_config_show_lists_packs(tmp_path: Path, capsys: pytest.CaptureFixture[s
     out = capsys.readouterr().out
     assert "packs:" in out
     assert "robot: 1 commands (ok)" in out
+
+
+# ---------------------------------------------------------------------
+# tour: argument parsing only. run_tour() itself drives a real Textual
+# app loop and is covered by tests/ui/test_tour.py and tests/tour/.
+# ---------------------------------------------------------------------
+
+
+def test_tour_help_mentions_fake_data(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        main(["tour", "--help"])
+    assert "fake data" in capsys.readouterr().out
+
+
+def test_tour_invokes_run_tour(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr("labgrid_tui.__main__.run_tour", lambda: calls.append(True))
+    assert main(["tour"]) == 0
+    assert calls == [True]

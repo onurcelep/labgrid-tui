@@ -1,6 +1,7 @@
 """Composed verb-driven dashboard: fleet table, detail overlay, activity log."""
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
 from textual import events
 from textual.app import ComposeResult
@@ -21,11 +22,12 @@ from labgrid_tui.coordinators import (
     validate_name,
 )
 from labgrid_tui.exec_.runner import client_available
-from labgrid_tui.model.commands import CommandEntry, EntryState, evaluate
+from labgrid_tui.model.commands import CommandEntry, EntryState, evaluate, is_verb
 from labgrid_tui.model.events import Kind
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import evaluate_pack
 from labgrid_tui.ui.actions import ActionRunner
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
 from labgrid_tui.ui.layout import MIN_HEIGHT, MIN_WIDTH, is_narrow, too_small
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
@@ -54,18 +56,36 @@ from labgrid_tui.ui.widgets.status_bar import (
     StatusBar,
 )
 
+if TYPE_CHECKING:
+    # Only for the cast in _persist_coordinators below: importing
+    # LabgridTuiApp for real would be circular (app.py imports this
+    # module). The cast makes app.persist_coordinators a real,
+    # mypy --strict-checked attribute access instead of a getattr(...,
+    # default=True) that would silently re-enable writes if it were ever
+    # renamed on LabgridTuiApp without this call site following along.
+    from labgrid_tui.ui.app import LabgridTuiApp
+
 _CONN_LABEL = {
     ConnState.CONNECTING: "connecting...",
     ConnState.LIVE: "live",
     ConnState.DISCONNECTED: "reconnecting (data stale)",
 }
 
+# (event name, detail) -> the tour's step sequencer, e.g. ("detail_open",
+# place_name). See labgrid_tui.tour.steps.TourController.
+TourHook = Callable[[str, str], None]
+# () -> the guidance the next pushed screen should show; None outside the tour.
+GuidanceProvider = Callable[[], TourGuidance | None]
+
 
 class DashboardScreen(Screen[None]):
-    DEFAULT_CSS = """
+    DEFAULT_CSS = (
+        """
     DashboardScreen { layout: vertical; }
-    #status-bar { dock: top; height: 1; padding: 0 1; background: $panel; color: $text; }
-    #filter-bar { dock: top; }
+    /* Header docks top on its own; nothing else may dock to the same edge:
+       Textual overlays same-edge docks instead of stacking them. */
+    #status-bar { height: 1; padding: 0 1; background: $panel; color: $text; }
+    #filter-bar { height: auto; }
     #main-row { height: 1fr; }
     #fleet-table { height: 1fr; min-height: 5; }
     #activity-log { height: 30%; min-height: 4; max-height: 12; border-top: solid $primary; }
@@ -83,6 +103,8 @@ class DashboardScreen(Screen[None]):
        width for the title in a narrow terminal. */
     DashboardScreen.-narrow Header HeaderClock { display: none; }
     """
+        + GUIDANCE_CSS
+    )
 
     # FilterBar is the first focusable widget in compose order; without this,
     # Textual's default auto-focus grabs it on mount even while it is hidden
@@ -104,7 +126,13 @@ class DashboardScreen(Screen[None]):
     ]
 
     def __init__(
-        self, runner: ActionRunner, ui_state: UiState, persist: Callable[[], None]
+        self,
+        runner: ActionRunner,
+        ui_state: UiState,
+        persist: Callable[[], None],
+        *,
+        tour_hook: TourHook | None = None,
+        guidance_provider: GuidanceProvider | None = None,
     ) -> None:
         super().__init__()
         self._runner = runner
@@ -114,6 +142,12 @@ class DashboardScreen(Screen[None]):
         # otherwise call it up to 5x/s for a status segment that never
         # changes within a session.
         self._client_available = client_available()
+        # Set only by the built-in tour (labgrid_tui.tour): a tiny sideband
+        # so its step sequencer can observe dashboard actions (cursor,
+        # marks, detail, commands overlay) without this screen knowing
+        # anything about tour state.
+        self._tour_hook = tour_hook
+        self._guidance_provider = guidance_provider
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -278,7 +312,19 @@ class DashboardScreen(Screen[None]):
         if place_name is None:
             self.notify("no place under the cursor")
             return
-        self.app.push_screen(DetailOverlay(place_name, self._runner))
+        if self._tour_hook is not None:
+            self._tour_hook("detail_open", place_name)
+        self.app.push_screen(
+            DetailOverlay(place_name, self._runner, guidance=self._guidance()),
+            callback=self._on_detail_dismissed,
+        )
+
+    def _guidance(self) -> TourGuidance | None:
+        return None if self._guidance_provider is None else self._guidance_provider()
+
+    def _on_detail_dismissed(self, _result: None) -> None:
+        if self._tour_hook is not None:
+            self._tour_hook("detail_close", "")
 
     def action_toggle_activity(self) -> None:
         log = self.query_one(ActivityLog)
@@ -311,6 +357,7 @@ class DashboardScreen(Screen[None]):
                 self._runner,
                 category=category,
                 prefix=getattr(self.app, "prefix", None),
+                guidance=self._guidance(),
             )
         )
 
@@ -362,15 +409,11 @@ class DashboardScreen(Screen[None]):
         # would drown it out. Failures still toast per item either way.
         notify_success = len(targets) == 1
         for name in targets:
-            # Scoped to built-in entries (copy_only is False only for
-            # those): a pack entry labelled "Acquire"/"Release" must never
-            # satisfy this lookup and get dispatched as the real verb.
+            # is_verb recognises the built-in verbs only (the acquire verb
+            # by its requires, since its label follows the place state);
+            # a pack entry can never satisfy this lookup.
             entry = next(
-                (
-                    e
-                    for e in self._entries_for(name)
-                    if not e.template.copy_only and e.template.label == label
-                ),
+                (e for e in self._entries_for(name) if is_verb(e.template, label)),
                 None,
             )
             if entry is None:
@@ -468,6 +511,12 @@ class DashboardScreen(Screen[None]):
 
     def on_device_table_marks_changed(self, _message: DeviceTable.MarksChanged) -> None:
         self._refresh_status()
+        if self._tour_hook is not None:
+            self._tour_hook("marks_changed", "")
+
+    def on_device_table_cursor_changed(self, message: DeviceTable.CursorChanged) -> None:
+        if self._tour_hook is not None:
+            self._tour_hook("cursor_changed", message.place_name or "")
 
     def _refresh_status(self) -> None:
         # Same window as the DeviceTable guard in refresh_fleet: a message
@@ -501,7 +550,7 @@ class DashboardScreen(Screen[None]):
             return
         entries = sorted(coordinators.entries.values(), key=lambda e: e.name)
         self.app.push_screen(
-            CoordinatorSelector(entries, coordinators.current),
+            CoordinatorSelector(entries, coordinators.current, guidance=self._guidance()),
             callback=self._on_coordinator_selector_result,
         )
 
@@ -543,6 +592,9 @@ class DashboardScreen(Screen[None]):
             callback=lambda values: self._on_coordinator_edit_result(name, values),
         )
 
+    def _persist_coordinators(self) -> bool:
+        return cast("LabgridTuiApp", self.app).persist_coordinators
+
     def _on_coordinator_edit_result(
         self, editing: str | None, values: dict[str, str] | None
     ) -> None:
@@ -570,7 +622,8 @@ class DashboardScreen(Screen[None]):
         coordinators.entries[name] = CoordinatorEntry(
             name=name, address=address, prefix=prefix, extra=extra
         )
-        save_coordinators(coordinators_path, coordinators)
+        if self._persist_coordinators():
+            save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator {'updated' if editing else 'created'}: {name}")
         if editing is not None and editing == coordinators.current:
             # The active coordinator's own address/prefix may have just
@@ -591,5 +644,6 @@ class DashboardScreen(Screen[None]):
             self.notify("cannot delete the active coordinator", severity="warning")
             return
         coordinators.entries.pop(name, None)
-        save_coordinators(coordinators_path, coordinators)
+        if self._persist_coordinators():
+            save_coordinators(coordinators_path, coordinators)
         self.log_line(f"coordinator deleted: {name}")

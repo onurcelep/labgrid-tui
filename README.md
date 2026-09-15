@@ -16,8 +16,9 @@ with or endorsed by the labgrid project or its maintainers.
   the coordinator's own event stream; no polling.
 - **Every action is a real command line**: console, power, SSH, file
   transfer, SD-mux, video, acquire, release, shown as the exact
-  `labgrid-client` invocation for that bench and gated by what the bench
-  has and whether you hold it.
+  `labgrid-client` invocation for that bench; what you cannot do right now
+  is greyed with the reason. `r` gets a bench in one line, queueing when
+  it is busy.
 - **Several coordinators**: named entries, switched at runtime
   (`shift+p`) or from the CLI.
 - **Shareable command packs**: a team's recipes in a small TOML file,
@@ -41,8 +42,9 @@ either way and run in place only when it is present.
 ## Usage
 
 ```
-labgrid-tui config init     # optional: persist a coordinator address
-labgrid-tui                 # or: labgrid-tui -x coordinator.example.org:20408
+labgrid-tui tour             # guided walkthrough on fake data, no coordinator needed
+labgrid-tui config init      # optional: persist a coordinator address
+labgrid-tui                  # or: labgrid-tui -x coordinator.example.org:20408
 ```
 
 Press `?` in the dashboard for every key, the table legend and the

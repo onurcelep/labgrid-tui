@@ -56,8 +56,7 @@ def test_access_states() -> None:
 def test_reasons() -> None:
     me = "laptop/alice"
     assert access_reason(Access.USABLE, _place(acquired=me), me) is None
-    assert "acquire" in str(access_reason(Access.NOT_ACQUIRED, _place(), me))
-    other = access_reason(Access.OTHER_USER, _place(acquired="host2/bob"), me)
-    assert "bob" in str(other) and "allow laptop/alice" in str(other)
+    assert access_reason(Access.NOT_ACQUIRED, _place(), me) == "hold the bench first"
+    assert access_reason(Access.OTHER_USER, _place(acquired="host2/bob"), me) == "held by bob"
     host = access_reason(Access.OTHER_HOST, _place(acquired="host2/alice"), me)
-    assert "host2" in str(host)
+    assert "host2" in str(host) and "allow laptop/alice" in str(host)

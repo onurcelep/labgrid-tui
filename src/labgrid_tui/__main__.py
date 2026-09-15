@@ -35,6 +35,7 @@ from labgrid_tui.packs import (
     save_registry,
     validate_pack_name,
 )
+from labgrid_tui.tour.app import run_tour
 from labgrid_tui.ui.app import LabgridTuiApp
 
 PROXY_MESSAGE = (
@@ -204,6 +205,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "show", help="show one command pack's entries", parents=[common]
     )
     pack_show_parser.add_argument("name")
+
+    subparsers.add_parser(
+        "tour",
+        help="guided walkthrough on fake data, no coordinator needed",
+        description="Guided walkthrough of the dashboard on fake data: no coordinator, "
+        "no network, nothing written to your config. n skips a step, q quits.",
+    )
 
     return parser
 
@@ -579,6 +587,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.pack_command == "update":
             return _cmd_pack_update(packs_path, env, args.name)
         return _cmd_pack_show(packs_path, args.name)
+
+    if args.subcommand == "tour":
+        run_tour()
+        return 0
 
     try:
         config = load_config(coordinator_flag, env, config_path)

@@ -13,7 +13,7 @@ from textual.binding import Binding
 from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable
-from textual.widgets.data_table import RowDoesNotExist
+from textual.widgets.data_table import CellDoesNotExist, RowDoesNotExist
 
 from labgrid_tui.coordinator.models import Place, Resource
 from labgrid_tui.coordinator.stream import ConnState
@@ -136,6 +136,10 @@ class DeviceTable(DataTable[str | Text]):
         self.cursor_foreground_priority = "renderable"
         self.zebra_stripes = True
         self.marks: set[str] = set()
+        # Tour pointer: when set, the mark cell of the cursor row shows this
+        # glyph (labgrid_tui.ui.guidance.MARKER) instead of the mark.
+        self.pointer_glyph: str | None = None
+        self._pointer_row: str | None = None
         self.filter_query: str = ""
         self._cache: tuple[FleetStore, dict[str, str] | None] | None = None
         # Last cursor place seen while the store held real (LIVE) data;
@@ -337,7 +341,7 @@ class DeviceTable(DataTable[str | Text]):
                 continue
             for col_idx, (col_key, cell) in enumerate(zip(self._column_keys, cells, strict=True)):
                 if prev is None or col_idx >= len(prev) or prev[col_idx] != fingerprints[col_idx]:
-                    self.update_cell(place.name, col_key, cell)
+                    self.update_cell(place.name, col_key, cell, update_width=True)
             self._prev_fingerprints[place.name] = fingerprints
 
     def _row_cells(
@@ -397,7 +401,7 @@ class DeviceTable(DataTable[str | Text]):
             return Text(value, style="dim") if all_offline else value
 
         values: dict[str, str | Text] = {
-            "m": MARK if place.name in self.marks else "",
+            "m": self._mark_cell(place.name),
             "name": dimmed(self._display_name(place.name)),
             "s": dot,
             "capabilities": capability_chips(online, offline, unknown=unknown),
@@ -408,6 +412,26 @@ class DeviceTable(DataTable[str | Text]):
         for key in tag_keys:
             values[f"tag_{key}"] = dimmed(place.tags.get(key, "-"))
         return values
+
+    def _mark_cell(self, name: str) -> str:
+        if self.pointer_glyph is not None and name == self.cursor_place():
+            return self.pointer_glyph
+        return MARK if name in self.marks else ""
+
+    def set_pointer(self, glyph: str | None) -> None:
+        """Show (or clear) the tour pointer on the cursor row."""
+        self.pointer_glyph = glyph
+        self._refresh_mark_cells(self._pointer_row, self.cursor_place())
+        self._pointer_row = self.cursor_place() if glyph is not None else None
+
+    def _refresh_mark_cells(self, *names: str | None) -> None:
+        for name in names:
+            if not name:
+                continue
+            try:
+                self.update_cell(name, "m", self._mark_cell(name))
+            except (RowDoesNotExist, CellDoesNotExist):
+                continue
 
     def _display_name(self, name: str) -> str:
         # Capped only in -narrow: place names commonly share a long
@@ -466,4 +490,9 @@ class DeviceTable(DataTable[str | Text]):
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         value = event.row_key.value if event.row_key is not None else None
-        self.post_message(self.CursorChanged(str(value) if value else None))
+        name = str(value) if value else None
+        if self.pointer_glyph is not None:
+            # The pointer follows the cursor: clear the old row, mark the new.
+            self._refresh_mark_cells(self._pointer_row, name)
+            self._pointer_row = name
+        self.post_message(self.CursorChanged(name))

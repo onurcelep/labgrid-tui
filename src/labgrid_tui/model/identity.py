@@ -43,8 +43,8 @@ def access_reason(access: Access, place: Place, me: str) -> str | None:
     if access is Access.USABLE:
         return None
     if access is Access.NOT_ACQUIRED:
-        return "requires acquire"
+        return "hold the bench first"
     host, _, user = (place.acquired or "").partition("/")
     if access is Access.OTHER_USER:
-        return f"acquired by {user}; ask them to run: allow {me}"
-    return f"acquired by you on {host}; run 'allow {me}' from that host"
+        return f"held by {user}"
+    return f"held by you on {host}; run allow {me} there"

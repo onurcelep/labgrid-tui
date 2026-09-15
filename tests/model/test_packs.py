@@ -153,7 +153,7 @@ def test_requires_held_false_when_acquired_by_other() -> None:
     pack = _pack(PackCommandTemplate(label="X", command="echo x", requires=frozenset({"held"})))
     entries = evaluate_pack(pack, _place(acquired=OTHER), [], ME, [], COORDINATOR, PREFIX)
     assert entries[0].state is EntryState.UNAVAILABLE
-    assert entries[0].reason == "hold the place first"
+    assert entries[0].reason == "hold the bench first"
 
 
 def test_token_placeholder_resolves_to_my_reservation() -> None:

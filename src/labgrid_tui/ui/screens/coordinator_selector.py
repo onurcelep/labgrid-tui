@@ -7,15 +7,18 @@ it stays part of the reusable surface documented in the README's
 "Building on labgrid-tui" section.
 """
 
+import contextlib
 from dataclasses import dataclass
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Label, ListItem, ListView, Static
 
 from labgrid_tui.coordinators import CoordinatorEntry
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance, mark
 
 
 @dataclass(frozen=True)
@@ -42,7 +45,8 @@ CoordinatorSelectorResult = SwitchResult | CreateResult | EditResult | DeleteRes
 
 
 class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
-    DEFAULT_CSS = """
+    DEFAULT_CSS = (
+        """
     CoordinatorSelector { align: center middle; }
     #coord-modal {
         width: 90%;
@@ -72,6 +76,8 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
 
     CoordinatorSelector.-narrow #coord-modal { width: 100%; }
     """
+        + GUIDANCE_CSS
+    )
 
     BINDINGS = [
         Binding("escape", "dismiss_none", "Cancel", show=True),
@@ -90,8 +96,14 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         Binding("colon", "app.command_palette", "Palette", show=False),
     ]
 
-    def __init__(self, entries: list[CoordinatorEntry], current: str | None) -> None:
+    def __init__(
+        self,
+        entries: list[CoordinatorEntry],
+        current: str | None,
+        guidance: TourGuidance | None = None,
+    ) -> None:
         super().__init__()
+        self._guidance = guidance
         self._entries = entries
         self._current = current
 
@@ -101,11 +113,13 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
             items: list[ListItem] = []
             initial_index = 0
             for idx, entry in enumerate(self._entries):
-                marker = " *" if entry.name == self._current else ""
-                items.append(ListItem(Label(f"{entry.name}{marker}  {entry.address}")))
+                items.append(ListItem(Label(self._row_text(entry))))
                 if entry.name == self._current:
                     initial_index = idx
             yield ListView(*items, id="coord-list", initial_index=initial_index)
+            tour = Static("", id="coord-hint-tour", classes="tour-guidance")
+            tour.add_class("hidden")
+            yield tour
             yield Static(
                 "enter=switch | n=new | e=edit | x=delete | esc/q=close",
                 id="coord-hint",
@@ -113,6 +127,7 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
 
     def on_mount(self) -> None:
         self.query_one("#coord-list", ListView).focus()
+        self.update_guidance(self._guidance)
 
     def _selected_name(self) -> str | None:
         lv = self.query_one("#coord-list", ListView)
@@ -147,3 +162,26 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
 
     def action_dismiss_none(self) -> None:
         self.dismiss(None)
+
+    def update_guidance(self, guidance: TourGuidance | None) -> None:
+        """Tour sideband: refresh the guidance line and the pointed row."""
+        self._guidance = guidance
+        try:
+            line = self.query_one("#coord-hint-tour", Static)
+        except NoMatches:
+            return
+        line.update("" if guidance is None else guidance.text)
+        line.set_class(guidance is None, "hidden")
+        # The guidance line takes the hint's slot rather than stacking on
+        # it, so a small terminal keeps its rows for the content.
+        with contextlib.suppress(NoMatches):
+            self.query_one("#coord-hint", Static).set_class(guidance is not None, "hidden")
+        for label, entry in zip(self.query(Label), self._entries, strict=False):
+            label.update(self._row_text(entry))
+
+    def _row_text(self, entry: CoordinatorEntry) -> str:
+        current = " *" if entry.name == self._current else ""
+        text = f"{entry.name}{current}  {entry.address}"
+        if self._guidance is None:
+            return text
+        return mark(text, self._guidance.target == entry.name)

@@ -176,7 +176,7 @@ def _requires_reason(
     for item in sorted(requires):
         if item == "held":
             if not held:
-                return "hold the place first"
+                return "hold the bench first"
         elif item.startswith("res."):
             cls_name = item.removeprefix("res.")
             if cls_name not in resources_by_class:

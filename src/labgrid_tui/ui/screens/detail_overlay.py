@@ -6,6 +6,7 @@ duck-typed ``refresh_fleet`` walk; a place removed while open renders as
 removed until dismissed.
 """
 
+import contextlib
 from datetime import UTC, datetime
 
 from rich.text import Text
@@ -23,6 +24,7 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_osc52, copy_via_suspend
 from labgrid_tui.ui.format import abbrev
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, MARKER, TourGuidance
 from labgrid_tui.ui.layout import is_narrow
 from labgrid_tui.ui.store import FleetStore
 
@@ -33,7 +35,8 @@ def _format_timestamp(epoch: float) -> str:
 
 
 class DetailOverlay(ModalScreen[None]):
-    DEFAULT_CSS = """
+    DEFAULT_CSS = (
+        """
     DetailOverlay { align: center middle; }
     #detail-modal {
         width: 95%;
@@ -61,6 +64,8 @@ class DetailOverlay(ModalScreen[None]):
 
     DetailOverlay.-narrow #detail-modal { width: 100%; height: 100%; }
     """
+        + GUIDANCE_CSS
+    )
 
     BINDINGS = [
         Binding("escape", "dismiss_overlay", "Close"),
@@ -84,8 +89,11 @@ class DetailOverlay(ModalScreen[None]):
         Binding("colon", "app.command_palette", "Palette", show=False),
     ]
 
-    def __init__(self, place_name: str, runner: ActionRunner) -> None:
+    def __init__(
+        self, place_name: str, runner: ActionRunner, guidance: TourGuidance | None = None
+    ) -> None:
         super().__init__()
+        self._guidance = guidance
         self.place_name = place_name
         self._runner = runner
         self._plain_text = ""
@@ -98,6 +106,9 @@ class DetailOverlay(ModalScreen[None]):
             yield Static("", id="detail-title")
             with VerticalScroll(id="detail-scroll"):
                 yield Static("", id="detail-body")
+            tour = Static("", id="detail-hint-tour", classes="tour-guidance")
+            tour.add_class("hidden")
+            yield tour
             yield Static(
                 "enter/y = copy | shift+enter = copy via select | c = commands | esc = close",
                 id="detail-hint",
@@ -105,6 +116,7 @@ class DetailOverlay(ModalScreen[None]):
 
     def on_mount(self) -> None:
         self.refresh_fleet()
+        self.update_guidance(self._guidance)
         self.set_focus(self.query_one("#detail-scroll", VerticalScroll))
 
     def on_resize(self, _event: events.Resize) -> None:
@@ -155,12 +167,12 @@ class DetailOverlay(ModalScreen[None]):
 
         place = store.places.get(self.place_name)
         if place is None:
-            title.update(f"Device: {self.place_name} (removed)")
+            title.update(f"{self._title_prefix()}Device: {self.place_name} (removed)")
             body.update("this place no longer exists on the coordinator")
             self._plain_text = f"{self.place_name}: removed"
             return
 
-        title.update(f"Device: {place.name}")
+        title.update(f"{self._title_prefix()}Device: {place.name}")
         text = Text()
         plain: list[str] = [f"Device: {place.name}"]
 
@@ -325,3 +337,22 @@ class DetailOverlay(ModalScreen[None]):
             extra_place=getattr(app, "place_extra", None),
             reservations=store.reservations,
         )
+
+    def update_guidance(self, guidance: TourGuidance | None) -> None:
+        """Tour sideband: refresh the guidance line and the pointed title."""
+        self._guidance = guidance
+        try:
+            line = self.query_one("#detail-hint-tour", Static)
+        except NoMatches:
+            return
+        line.update("" if guidance is None else guidance.text)
+        line.set_class(guidance is None, "hidden")
+        # The guidance line takes the hint's slot rather than stacking on
+        # it, so a small terminal keeps its rows for the content.
+        with contextlib.suppress(NoMatches):
+            self.query_one("#detail-hint", Static).set_class(guidance is not None, "hidden")
+        self.refresh_fleet()
+
+    def _title_prefix(self) -> str:
+        pointed = self._guidance is not None and self._guidance.target == "title"
+        return f"{MARKER} " if pointed else ""

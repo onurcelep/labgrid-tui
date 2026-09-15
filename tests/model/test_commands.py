@@ -3,10 +3,13 @@ from labgrid_tui.model.commands import (
     GLOBAL_TEMPLATES,
     PLACE_TEMPLATES,
     RESOURCE_TEMPLATES,
+    VERB_ACQUIRE,
     CommandTemplate,
     EntryState,
     default_prefix,
     evaluate,
+    get_command_line,
+    is_verb,
     render_global,
     reservation_entries,
 )
@@ -63,19 +66,33 @@ def _res(cls: str, avail: bool = True) -> Resource:
 def test_prefix_rendering() -> None:
     assert PREFIX == "labgrid-client -x coord.lab:20408"
     entries = evaluate(_place(), [], ME, PREFIX)
-    acquire = next(e for e in entries if e.template.label == "Acquire")
-    assert acquire.command_line == "labgrid-client -x coord.lab:20408 -p tb-1 acquire"
+    get = next(e for e in entries if is_verb(e.template, VERB_ACQUIRE))
+    assert get.template.label == "Acquire"
+    assert get.command_line == get_command_line(PREFIX, "tb-1")
+    assert get.command_line == (
+        "labgrid-client -x coord.lab:20408 -p +$(labgrid-client -x coord.lab:20408 "
+        "reserve --wait --shell name=tb-1 | cut -d= -f2) acquire"
+    )
+    assert get.template.copy_only  # shell syntax: always copied, never executed
+    plain = next(e for e in entries if e.template.label == "Acquire now (no queue)")
+    assert plain.command_line == "labgrid-client -x coord.lab:20408 -p tb-1 acquire"
 
 
-def test_acquire_only_when_free() -> None:
-    free_entries = evaluate(_place(), [], ME, PREFIX)
-    acquire = next(e for e in free_entries if e.template.label == "Acquire")
-    assert acquire.state is EntryState.RUNNABLE
+def test_get_verb_follows_the_place_state() -> None:
+    free = next(e for e in evaluate(_place(), [], ME, PREFIX) if is_verb(e.template, VERB_ACQUIRE))
+    assert (free.template.label, free.state) == ("Acquire", EntryState.RUNNABLE)
 
     taken = evaluate(_place(acquired="host2/bob"), [], ME, PREFIX)
-    # A held place offers Release/Allow instead of Acquire.
-    assert not any(e.template.label == "Acquire" for e in taken)
-    assert any(e.template.label == "Release" for e in taken)
+    get = next(e for e in taken if is_verb(e.template, VERB_ACQUIRE))
+    assert (get.template.label, get.state) == ("Queue and acquire", EntryState.RUNNABLE)
+    plain = next(e for e in taken if e.template.label == "Acquire now (no queue)")
+    assert plain.state is EntryState.UNAVAILABLE
+    release = next(e for e in taken if e.template.label == "Release")
+    assert (release.state, release.reason) == (EntryState.UNAVAILABLE, "held by bob")
+
+    own = evaluate(_place(acquired=ME), [], ME, PREFIX)
+    mine = next(e for e in own if is_verb(e.template, VERB_ACQUIRE))
+    assert (mine.state, mine.reason) == (EntryState.UNAVAILABLE, "already yours")
 
 
 def test_usable_by_me_covers_allowed() -> None:
@@ -199,21 +216,37 @@ def test_extra_place_templates() -> None:
     assert custom.command_line.endswith("-p tb-1 monitor")
 
 
-def test_free_place_hides_resource_commands() -> None:
+def test_free_place_lists_resource_commands_greyed() -> None:
     entries = evaluate(_place(), [_res("NetworkPowerPort")], ME, PREFIX)
-    categories = {e.template.category for e in entries}
-    assert categories == {"Manage", "Info"}
+    power_on = next(e for e in entries if e.template.label == "Power on")
+    assert (power_on.state, power_on.reason) == (EntryState.UNAVAILABLE, "hold the bench first")
     assert [e.template.label for e in entries if e.template.category == "Manage"] == [
         "Acquire",
+        "Acquire now (no queue)",
+        "Release",
+        "Allow user",
         "Reserve (queue)",
     ]
+
+
+def test_resource_commands_say_who_holds_or_reserved_the_place() -> None:
+    held = evaluate(_place(acquired="host2/bob"), [_res("NetworkPowerPort")], ME, PREFIX)
+    power_on = next(e for e in held if e.template.label == "Power on")
+    assert (power_on.state, power_on.reason) == (EntryState.UNAVAILABLE, "held by bob")
+
+    reservations = [_reservation("TOK", "host9/carol", ReservationState.allocated, place="tb-1")]
+    reserved = evaluate(
+        _place(reservation="TOK"), [_res("NetworkPowerPort")], ME, PREFIX, reservations=reservations
+    )
+    power_on = next(e for e in reserved if e.template.label == "Power on")
+    assert (power_on.state, power_on.reason) == (EntryState.UNAVAILABLE, "reserved by carol")
 
 
 def test_held_place_shows_resource_commands_and_manage() -> None:
     entries = evaluate(_place(acquired="host2/bob"), [_res("NetworkPowerPort")], ME, PREFIX)
     labels = [e.template.label for e in entries]
     assert "Power on" in labels and "Release" in labels and "Allow user" in labels
-    assert "Acquire" not in labels
+    assert "Queue and acquire" in labels
     release = next(e for e in entries if e.template.label == "Release")
     assert release.state is EntryState.UNAVAILABLE  # held by someone else
 
@@ -238,9 +271,10 @@ def test_reserved_place_counts_as_held() -> None:
 
 def test_acquire_refused_when_all_resources_offline() -> None:
     entries = evaluate(_place(), [_res("NetworkPowerPort", avail=False)], ME, PREFIX)
-    acquire = next(e for e in entries if e.template.label == "Acquire")
-    assert acquire.state is EntryState.UNAVAILABLE
-    assert acquire.reason == "all resources offline"
+    for label in ("Acquire", "Acquire now (no queue)"):
+        acquire = next(e for e in entries if e.template.label == label)
+        assert acquire.state is EntryState.UNAVAILABLE
+        assert acquire.reason == "all resources offline"
 
 
 def test_acquire_runnable_when_some_resources_online() -> None:
@@ -295,10 +329,12 @@ def test_gating_reserved_by_other_not_yet_acquired() -> None:
     place = _place(reservation="TOK")
     reservations = [_reservation("TOK", OTHER, ReservationState.waiting)]
     entries = evaluate(place, [], ME, PREFIX, reservations=reservations)
-    acquire = next(e for e in entries if e.template.label == "Acquire")
+    acquire = next(e for e in entries if e.template.label == "Acquire now (no queue)")
+    get = next(e for e in entries if is_verb(e.template, VERB_ACQUIRE))
     reserve = next(e for e in entries if e.template.label == "Reserve (queue)")
     assert acquire.state is EntryState.UNAVAILABLE
     assert acquire.reason == f"reserved by {OTHER}"
+    assert (get.template.label, get.state) == ("Queue and acquire", EntryState.RUNNABLE)
     assert reserve.state is EntryState.RUNNABLE
 
 
@@ -306,10 +342,13 @@ def test_gating_reserved_by_me_waiting() -> None:
     place = _place(reservation="TOK")
     reservations = [_reservation("TOK", ME, ReservationState.waiting)]
     entries = evaluate(place, [], ME, PREFIX, reservations=reservations)
-    acquire = next(e for e in entries if e.template.label == "Acquire")
+    acquire = next(e for e in entries if e.template.label == "Acquire now (no queue)")
+    get = next(e for e in entries if is_verb(e.template, VERB_ACQUIRE))
     reserve = next(e for e in entries if e.template.label == "Reserve (queue)")
     assert acquire.state is EntryState.UNAVAILABLE
     assert acquire.reason == "waiting for allocation"
+    assert get.template.label == "Acquire (your reservation is waiting)"
+    assert get.state is EntryState.RUNNABLE  # the one-liner waits for the allocation
     assert reserve.state is EntryState.UNAVAILABLE
     assert reserve.reason == "reserved by you"
 
@@ -324,11 +363,13 @@ def test_gating_reserved_by_me_allocated() -> None:
     place = _place(reservation="TOK")
     reservations = [_reservation("TOK", ME, ReservationState.allocated, place="tb-1")]
     entries = evaluate(place, [], ME, PREFIX, reservations=reservations)
-    acquire = next(e for e in entries if e.template.label == "Acquire")
+    acquire = next(e for e in entries if e.template.label == "Acquire now (no queue)")
+    get = next(e for e in entries if is_verb(e.template, VERB_ACQUIRE))
     reserve = next(e for e in entries if e.template.label == "Reserve (queue)")
     assert acquire.state is EntryState.RUNNABLE
     assert acquire.reason is None
     assert acquire.command_line == f"{PREFIX} -p tb-1 acquire"  # plain acquire, no +TOKEN
+    assert (get.template.label, get.state) == ("Acquire", EntryState.RUNNABLE)
     assert reserve.state is EntryState.UNAVAILABLE
     assert reserve.reason == "reserved by you"
 
