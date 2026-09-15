@@ -1,9 +1,10 @@
 """ScriptedFleet: a deterministic, in-memory FleetSource for the tour.
 
-Replays a fixed sequence of coordinator events on the running event loop
-instead of talking to gRPC, so the tour has no network dependency and
-produces identical output every run. Event timing is scaled by *speed* so
-tests can run the whole script in well under a second.
+Delivers a fixed initial fleet on the running event loop instead of talking
+to gRPC, then emits further coordinator events only when the tour cues them
+(`cue()`), so each event lands at the moment the tour is talking about it
+rather than at some wall-clock offset the user may or may not be looking at.
+No network, identical output every run.
 """
 
 import asyncio
@@ -50,8 +51,12 @@ _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
 _MY_TOKEN = "tour-mine-1"
 _ALICE_TOKEN = "tour-alice-1"
 _ALICE = "laptop/alice"
-_ALICE_ALLOCATED_AT = 8.0
-_ALICE_RELEASED_AT = 14.0
+
+# Cue names the tour can fire, in the order the tour uses them.
+CUE_ALICE_ACQUIRES = "alice_acquires"
+CUE_SERIAL_OFFLINE = "serial_offline"
+CUE_SERIAL_ONLINE = "serial_online"
+CUE_MINE_ALLOCATED = "mine_allocated"
 
 
 def _place(
@@ -154,15 +159,14 @@ def _reservation(
     )
 
 
-def _lab_reservations_at(elapsed: float) -> list[Reservation]:
-    """The bench-04 queue: alice is allocated first (elapsed in
-    [_ALICE_ALLOCATED_AT, _ALICE_RELEASED_AT)); once she releases it, she
-    drops out of the list entirely and mine is allocated instead. Mine is
-    present, waiting, from t=0 so the Reservations tab always has content."""
+def _lab_reservations(cued: frozenset[str]) -> list[Reservation]:
+    """The bench-04 queue: alice holds the allocation until the tour cues
+    that she released it and mine got promoted; mine is present, waiting,
+    from the start so the Reservations tab always has content."""
     me = current_id()
-    mine_allocated = elapsed >= _ALICE_RELEASED_AT
+    mine_allocated = CUE_MINE_ALLOCATED in cued
     reservations: list[Reservation] = []
-    if _ALICE_ALLOCATED_AT <= elapsed < _ALICE_RELEASED_AT:
+    if not mine_allocated:
         reservations.append(
             _reservation(_ALICE, _ALICE_TOKEN, ReservationState.allocated, "bench-04")
         )
@@ -205,34 +209,34 @@ def _desk_initial() -> list[tuple[Place, list[Resource]]]:
 @dataclass(frozen=True)
 class FleetScript:
     initial: tuple[tuple[Place, tuple[Resource, ...]], ...]
-    # (offset in unscaled seconds, events to emit), ascending offset order.
-    timeline: tuple[tuple[float, Callable[[], list[Event]]], ...]
-    reservations_at: Callable[[float], list[Reservation]]
+    cues: dict[str, Callable[[], list[Event]]]
+    reservations: Callable[[frozenset[str]], list[Reservation]]
 
 
 def _script(
     initial: list[tuple[Place, list[Resource]]],
-    timeline: list[tuple[float, Callable[[], list[Event]]]],
-    reservations_at: Callable[[float], list[Reservation]],
+    cues: dict[str, Callable[[], list[Event]]],
+    reservations: Callable[[frozenset[str]], list[Reservation]],
 ) -> FleetScript:
     return FleetScript(
         initial=tuple((place, tuple(resources)) for place, resources in initial),
-        timeline=tuple(timeline),
-        reservations_at=reservations_at,
+        cues=cues,
+        reservations=reservations,
     )
 
 
 LAB_SCRIPT = _script(
     _lab_initial(),
-    [
-        (4.0, _alice_acquires_bench_03),
-        (16.0, lambda: _bench_05_serial(avail=False)),
-        (22.0, lambda: _bench_05_serial(avail=True)),
-    ],
-    _lab_reservations_at,
+    {
+        CUE_ALICE_ACQUIRES: _alice_acquires_bench_03,
+        CUE_SERIAL_OFFLINE: lambda: _bench_05_serial(avail=False),
+        CUE_SERIAL_ONLINE: lambda: _bench_05_serial(avail=True),
+        CUE_MINE_ALLOCATED: lambda: [],  # observable through get_reservations()
+    },
+    _lab_reservations,
 )
 
-DESK_SCRIPT = _script(_desk_initial(), [], lambda _elapsed: [])
+DESK_SCRIPT = _script(_desk_initial(), {}, lambda _cued: [])
 
 SCRIPTS: dict[str, FleetScript] = {
     "tour:lab": LAB_SCRIPT,
@@ -241,51 +245,44 @@ SCRIPTS: dict[str, FleetScript] = {
 
 
 class ScriptedFleet:
-    """FleetSource that replays *script* instead of talking to a coordinator."""
+    """FleetSource that delivers *script* instead of talking to a coordinator."""
 
-    def __init__(self, script: FleetScript, speed: float) -> None:
+    def __init__(self, script: FleetScript) -> None:
         self._script = script
-        # The CLI (--speed, see __main__.py's _positive_float) already
-        # rejects a non-positive value; this is only a backstop against a
-        # non-positive speed passed by an embedder, not a documented way to
-        # get the default.
-        self._speed = speed if speed > 0 else 1.0
         self._stopped = asyncio.Event()
-        self._start: float | None = None
+        self._on_event: Callable[[Event], None] | None = None
+        self._cued: set[str] = set()
 
     def start(self, on_event: Callable[[Event], None]) -> Coroutine[Any, Any, None]:
+        self._on_event = on_event
         return self._run(on_event)
 
     async def _run(self, on_event: Callable[[Event], None]) -> None:
-        self._start = asyncio.get_running_loop().time()
         on_event(ConnectionChanged(ConnState.CONNECTING))
         for place, resources in self._script.initial:
             on_event(PlaceChanged(place))
             for resource in resources:
                 on_event(ResourceChanged(resource))
         on_event(ConnectionChanged(ConnState.LIVE))
-
-        previous_offset = 0.0
-        for offset, build_events in self._script.timeline:
-            if await self._wait((offset - previous_offset) / self._speed):
-                return
-            previous_offset = offset
-            for event in build_events():
-                on_event(event)
-        # Nothing left to replay; idle until stop() (or the worker running
-        # this coroutine is cancelled directly), mirroring EventStream.run's
-        # run-until-stopped shape so a coordinator switch tears it down the
-        # same way for both fleet sources.
+        # Idle until stop() (or the worker running this coroutine is
+        # cancelled), mirroring EventStream.run's run-until-stopped shape so a
+        # coordinator switch tears both fleet sources down the same way.
         await self._stopped.wait()
 
-    async def _wait(self, delay: float) -> bool:
-        """Wait up to *delay* seconds, or until stop(). Returns True if
-        stop() cut the wait short."""
-        try:
-            await asyncio.wait_for(self._stopped.wait(), timeout=max(delay, 0.0))
-        except TimeoutError:
+    def cue(self, name: str) -> bool:
+        """Emit the events for *name* now. Unknown cues and repeats are
+        no-ops; returns whether anything was emitted."""
+        build = self._script.cues.get(name)
+        if build is None or name in self._cued or self._on_event is None:
             return False
+        self._cued.add(name)
+        for event in build():
+            self._on_event(event)
         return True
+
+    @property
+    def cued(self) -> frozenset[str]:
+        return frozenset(self._cued)
 
     def stop(self) -> None:
         self._stopped.set()
@@ -294,20 +291,17 @@ class ScriptedFleet:
         pass  # the tour never disconnects; nothing to retry
 
     async def get_reservations(self) -> list[Reservation]:
-        elapsed = 0.0
-        if self._start is not None:
-            elapsed = (asyncio.get_running_loop().time() - self._start) * self._speed
-        return self._script.reservations_at(elapsed)
+        return self._script.reservations(self.cued)
 
     async def aclose(self) -> None:
         self.stop()
 
 
-def fleet_source_factory(speed: float) -> Callable[[str], ScriptedFleet]:
+def fleet_source_factory() -> Callable[[str], ScriptedFleet]:
     """A fresh ScriptedFleet per connect/reconnect, keyed by the tour's
     "tour:lab"/"tour:desk" addresses (see labgrid_tui.tour.app)."""
 
     def factory(address: str) -> ScriptedFleet:
-        return ScriptedFleet(SCRIPTS.get(address, LAB_SCRIPT), speed)
+        return ScriptedFleet(SCRIPTS.get(address, LAB_SCRIPT))
 
     return factory

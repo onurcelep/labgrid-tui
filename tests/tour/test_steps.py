@@ -2,203 +2,127 @@
 
 Every public on_*/skip method is checked against the invariant documented
 on TourController itself: it advances the step counter by at most one, and
-only when its own guard matches the *current* step. These are the fast,
-deterministic counterpart to the pilot tests in tests/ui/test_tour.py,
-which additionally prove the triggers are reachable by keyboard.
+only when its own guard matches the current step.
 """
 
 from labgrid_tui.model.commands import CommandEntry, CommandTemplate, EntryState
-from labgrid_tui.tour.steps import DONE_TEXT, STEP_COUNT, TourController
-
-ALL_TRIGGERS_SMOKE: tuple[str, ...] = (
-    "skip",
-    "on_cursor_changed",
-    "on_marks_changed",
-    "on_detail_open",
-    "on_detail_close",
-    "on_alice_acquire",
-)
+from labgrid_tui.tour.fleet import CUE_ALICE_ACQUIRES, CUE_MINE_ALLOCATED, CUE_SERIAL_ONLINE
+from labgrid_tui.tour.steps import DONE_TEXT, ENTRY_CUES, STEP_COUNT, TourController
 
 
-def _acquire_entry() -> CommandEntry:
-    template = CommandTemplate("Manage", "Acquire", "acquire")
-    return CommandEntry(template, "labgrid-client -p bench-01 acquire", EntryState.RUNNABLE, None)
+def _entry(category: str, label: str) -> CommandEntry:
+    template = CommandTemplate(category, label, label.lower(), copy_only=(category == "robot"))
+    return CommandEntry(template, f"{category} {label}", EntryState.RUNNABLE, None)
 
 
-def _robot_entry() -> CommandEntry:
-    template = CommandTemplate("robot", "Smoke tests", "robot tests/smoke", copy_only=True)
-    return CommandEntry(template, "robot tests/smoke", EntryState.RUNNABLE, None)
-
-
-def _other_entry() -> CommandEntry:
-    template = CommandTemplate("Info", "Device info", "show")
-    return CommandEntry(template, "labgrid-client -p bench-01 show", EntryState.RUNNABLE, None)
-
-
-def test_label_formats_current_step_one_based() -> None:
+def _at(step: int) -> TourController:
     controller = TourController()
-    assert controller.label() == "Step 1/8: move the cursor with j/k (or the arrow keys)"
-    controller.step = 3
-    assert controller.label().startswith("Step 4/8:")
-
-
-def test_label_is_done_text_once_past_the_last_step() -> None:
-    controller = TourController()
-    controller.step = STEP_COUNT
-    assert controller.label() == DONE_TEXT
-
-
-def test_on_change_fires_once_per_advance() -> None:
-    controller = TourController()
-    labels: list[str] = []
-    controller.on_change = labels.append
-    controller.skip()
-    assert labels == [controller.label()]
-
-
-def test_skip_advances_exactly_one_step_from_any_position() -> None:
-    controller = TourController()
-    for expected in range(1, STEP_COUNT + 1):
+    for _ in range(step):
         controller.skip()
-        assert controller.step == expected
-    # Already done: skip() is a no-op, not a step past STEP_COUNT.
+    return controller
+
+
+def test_label_is_one_based_and_names_the_key() -> None:
+    controller = TourController()
+    assert controller.label().startswith("Step 1/8: Your lab")
+    assert "j/k" in controller.label()
+
+
+def test_done_after_the_last_step() -> None:
+    controller = _at(STEP_COUNT)
+    assert controller.done
+    assert controller.label() == DONE_TEXT
     controller.skip()
     assert controller.step == STEP_COUNT
 
 
-def test_cursor_changed_ignores_the_auto_highlight_freebie() -> None:
-    """DataTable posts one CursorChanged the moment the fleet first
-    populates, with no key pressed; that must not complete step 1 on its
-    own."""
+def test_on_change_and_on_enter_fire_once_per_advance_and_on_done_at_the_end() -> None:
     controller = TourController()
-    controller.on_cursor_changed()  # the freebie
+    changes: list[str] = []
+    entered: list[int] = []
+    done: list[bool] = []
+    controller.on_change = changes.append
+    controller.on_enter = entered.append
+    controller.on_done = lambda: done.append(True)
+    for _ in range(STEP_COUNT):
+        controller.skip()
+    assert len(changes) == STEP_COUNT
+    assert entered == list(range(1, STEP_COUNT))
+    assert done == [True]
+
+
+def test_cursor_move_counts_only_a_change_from_the_initial_highlight() -> None:
+    controller = TourController()
+    controller.on_cursor_changed("bench-01")  # the table's own first highlight
     assert controller.step == 0
-    controller.on_cursor_changed()  # a real j/k press
+    controller.on_cursor_changed("bench-01")  # a rebuild re-reporting the same row
+    assert controller.step == 0
+    controller.on_cursor_changed("bench-02")
+    assert controller.step == 1
+    controller.on_cursor_changed("bench-03")
     assert controller.step == 1
 
 
-def test_cursor_changed_is_a_noop_once_step_1_is_behind_us() -> None:
-    controller = TourController()
-    controller.step = 3
-    controller.on_cursor_changed()
-    controller.on_cursor_changed()
-    assert controller.step == 3
-
-
-def test_marks_changed_advances_only_on_step_2() -> None:
-    controller = TourController()
-    controller.on_marks_changed()  # step 0: not step 2's trigger
-    assert controller.step == 0
-    controller.step = 1
-    controller.on_marks_changed()
-    assert controller.step == 2
-    controller.on_marks_changed()  # already past: no-op
-    assert controller.step == 2
-
-
-def test_copy_acquire_advances_step_3_only_for_the_acquire_entry() -> None:
-    controller = TourController()
-    controller.step = 2
-    controller.on_copy(_other_entry())
-    assert controller.step == 2  # wrong entry: not the trigger
-    controller.on_copy(_acquire_entry())
-    assert controller.step == 3
-
-
-def test_copy_advances_step_4_for_any_entry() -> None:
-    controller = TourController()
-    controller.step = 3
-    controller.on_copy(_other_entry())
-    assert controller.step == 4
-
-
-def test_copy_robot_advances_step_7_only_for_robot_category() -> None:
-    controller = TourController()
-    controller.step = 6
-    controller.on_copy(_other_entry())
-    assert controller.step == 6  # not the robot pack: not the trigger
-    controller.on_copy(_robot_entry())
-    assert controller.step == 7
-
-
-def test_copy_off_its_steps_is_a_noop() -> None:
-    controller = TourController()
-    controller.step = 4  # step 5 (detail): copy is not its trigger
-    controller.on_copy(_acquire_entry())
-    controller.on_copy(_robot_entry())
-    assert controller.step == 4
-
-
-def test_detail_open_then_close_advances_step_5() -> None:
-    controller = TourController()
-    controller.step = 4
-    controller.on_detail_close()  # close without ever opening: no-op
-    assert controller.step == 4
-    controller.on_detail_open()
-    assert controller.step == 4  # opening alone does not advance
+def test_detail_open_then_close_advances_step_2_only() -> None:
+    controller = _at(1)
     controller.on_detail_close()
+    assert controller.step == 1
+    controller.on_detail_open()
+    controller.on_detail_close()
+    assert controller.step == 2
+    controller.on_detail_open()
+    controller.on_detail_close()
+    assert controller.step == 2
+
+
+def test_copy_triggers_match_their_own_step_only() -> None:
+    controller = _at(2)
+    controller.on_copy(_entry("Info", "Device info"))
+    assert controller.step == 2
+    controller.on_copy(_entry("Manage", "Acquire"))
+    assert controller.step == 3
+    controller.on_copy(_entry("robot", "Smoke tests"))
+    assert controller.step == 3  # step 4 wants a built-in entry, not a pack entry
+    controller.on_copy(_entry("Connect", "Serial console"))
+    assert controller.step == 4
+    controller.skip()  # step 5 is acknowledged with n
+    controller.on_copy(_entry("Manage", "Acquire"))
     assert controller.step == 5
-
-
-def test_detail_hooks_off_step_5_are_a_noop() -> None:
-    controller = TourController()
-    controller.on_detail_open()
-    controller.on_detail_close()
-    assert controller.step == 0
-
-
-def test_alice_acquire_advances_step_6_only_while_current() -> None:
-    controller = TourController()
-    controller.on_alice_acquire()  # lands early, long before step 6
-    assert controller.step == 0
-    controller.step = 5
-    controller.on_alice_acquire()
+    controller.on_copy(_entry("Manage", "Reserve (queue)"))
     assert controller.step == 6
-
-
-def test_alice_acquire_does_not_replay_once_past_step_6() -> None:
-    controller = TourController()
-    controller.step = 5
-    controller.on_alice_acquire()
-    controller.on_alice_acquire()  # a second delivery, if it ever happened
+    controller.on_copy(_entry("Info", "Device info"))
     assert controller.step == 6
-
-
-def test_coordinator_switch_needs_desk_then_lab_while_on_step_8() -> None:
-    controller = TourController()
-    controller.step = 7
-    controller.on_coordinator_switch("lab")  # already active: not a switch
+    controller.on_copy(_entry("robot", "Smoke tests"))
     assert controller.step == 7
-    controller.on_coordinator_switch("desk")
-    assert controller.step == 7  # halfway through the round trip
-    controller.on_coordinator_switch("lab")
-    assert controller.step == 8
 
 
-def test_coordinator_switch_off_step_8_is_a_noop() -> None:
-    controller = TourController()
-    controller.on_coordinator_switch("desk")
+def test_coordinator_switch_to_desk_finishes_the_tour() -> None:
+    controller = _at(STEP_COUNT - 1)
     controller.on_coordinator_switch("lab")
-    assert controller.step == 0
+    assert not controller.done
+    controller.on_coordinator_switch("desk")
+    assert controller.done
+    early = _at(3)
+    early.on_coordinator_switch("desk")
+    assert early.step == 3
+
+
+def test_entry_cues_fire_the_lab_reaction_when_the_steps_talk_about_it() -> None:
+    assert CUE_ALICE_ACQUIRES in ENTRY_CUES[4]
+    assert CUE_SERIAL_ONLINE in ENTRY_CUES[5]
+    assert CUE_MINE_ALLOCATED in ENTRY_CUES[6]
 
 
 def test_every_trigger_advances_by_at_most_one_step_from_any_position() -> None:
-    """The invariant tour/steps.py documents, swept across every step
-    index: no trigger call may ever move the counter by more than one."""
-    entries = (_acquire_entry(), _robot_entry(), _other_entry())
     for start in range(STEP_COUNT + 1):
-        for name in ALL_TRIGGERS_SMOKE:
-            controller = TourController()
-            controller.step = start
-            getattr(controller, name)()
-            assert controller.step in (start, start + 1)
-        for entry in entries:
-            controller = TourController()
-            controller.step = start
-            controller.on_copy(entry)
-            assert controller.step in (start, start + 1)
-        for name in ("desk", "lab"):
-            controller = TourController()
-            controller.step = start
-            controller.on_coordinator_switch(name)
-            assert controller.step in (start, start + 1)
+        for trigger in (
+            lambda c: c.skip(),
+            lambda c: c.on_cursor_changed("bench-09"),
+            lambda c: c.on_detail_close(),
+            lambda c: c.on_copy(_entry("Manage", "Acquire")),
+            lambda c: c.on_coordinator_switch("desk"),
+        ):
+            controller = _at(start)
+            controller.on_cursor_changed("bench-01")
+            trigger(controller)
+            assert controller.step - start in (0, 1)
