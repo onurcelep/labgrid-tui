@@ -9,17 +9,19 @@ parallel implementation.
 
 from collections.abc import Callable
 
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.css.query import NoMatches
 from textual.screen import Screen
+from textual.widgets import Footer
 
 from labgrid_tui.config import Config
-from labgrid_tui.coordinator.stream import Event, PlaceChanged
 from labgrid_tui.coordinators import CoordinatorEntry, Coordinators
-from labgrid_tui.tour.fleet import fleet_source_factory
+from labgrid_tui.tour.fleet import ScriptedFleet, fleet_source_factory
 from labgrid_tui.tour.pack import load_robot_pack
 from labgrid_tui.tour.runner import TourActionRunner
-from labgrid_tui.tour.steps import TourController
+from labgrid_tui.tour.steps import ENTRY_CUES, TourController
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.app import LabgridTuiApp
 from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
@@ -30,10 +32,13 @@ SUB_TITLE = "TOUR (fake data)"
 LAB_ADDRESS = "tour:lab"
 DESK_ADDRESS = "tour:desk"
 
-# Alice's acquire of bench-03 (see tour.fleet.LAB_SCRIPT) is the one
-# scripted event a tour step (watching the activity log) waits on directly,
-# rather than through a dashboard/runner hook.
-_WATCHED_PLACE = "bench-03"
+# How long the closing line stays after the last step; any key ends it.
+DONE_SECONDS = 6.0
+WELCOME_TITLE = "Welcome to labgrid-tui"
+WELCOME_TEXT = (
+    "A tour on fake data: six benches, nothing here reaches a real lab. "
+    "Follow the bar above the footer; [b]n[/] skips a step, [b]q[/] quits."
+)
 
 
 def _tour_config() -> Config:
@@ -69,35 +74,40 @@ class TourDashboardScreen(DashboardScreen):
         self._controller = controller
 
     def compose(self) -> ComposeResult:
-        # Composed after Footer: widgets docked to the same edge stack
-        # innermost-last, so this lands just above the footer instead of
-        # underneath it.
-        yield from super().compose()
-        yield TourPanel(self._controller)
+        # The panel is a normal flow widget placed before the docked Footer,
+        # so it takes the row above the key hints rather than covering them.
+        for widget in super().compose():
+            if isinstance(widget, Footer):
+                yield TourPanel(self._controller)
+            yield widget
 
 
 class TourApp(LabgridTuiApp):
     BINDINGS = [
         *LabgridTuiApp.BINDINGS,
-        # priority=True: step 8 opens CoordinatorSelector, which binds "n"
-        # to "new coordinator" (see coordinator_selector.py); without
+        # priority=True: the last step opens CoordinatorSelector, which binds
+        # "n" to "new coordinator" (see coordinator_selector.py); without
         # priority, that screen-level binding would win and "skip" (which
         # TourPanel advertises on every step) would silently do nothing
         # while that modal is on top.
         Binding("n", "tour_skip", "Skip step", show=True, priority=True),
     ]
 
-    def __init__(self, speed: float = 1.0) -> None:
+    def __init__(self) -> None:
         self._controller = TourController()
+        self._controller.on_enter = self._on_step_entered
+        self._controller.on_done = self._on_done
         super().__init__(
             _tour_config(),
             coordinators=_tour_coordinators(),
             persist_coordinators=False,
             packs=[load_robot_pack()],
             pack_errors=[],
-            ui_state=UiState(onboarded=True),
+            # The activity log is part of the story (step 5 points at it),
+            # so it starts visible regardless of the user's real preference.
+            ui_state=UiState(onboarded=True, show_activity=True),
             persist_ui_state=False,
-            fleet_source_factory=fleet_source_factory(speed),
+            fleet_source_factory=fleet_source_factory(),
             runner_factory=self._build_runner,
             sub_title=SUB_TITLE,
             tour_hook=self._on_tour_hook,
@@ -124,28 +134,45 @@ class TourApp(LabgridTuiApp):
             self._controller,
         )
 
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.notify(WELCOME_TEXT, title=WELCOME_TITLE, timeout=10)
+
     def _on_tour_hook(self, name: str, detail: str) -> None:
         if name == "cursor_changed":
-            self._controller.on_cursor_changed()
-        elif name == "marks_changed":
-            self._controller.on_marks_changed()
+            self._controller.on_cursor_changed(detail)
         elif name == "detail_open":
             self._controller.on_detail_open()
         elif name == "detail_close":
             self._controller.on_detail_close()
 
-    def _on_stream_event(self, event: Event) -> None:
-        if (
-            isinstance(event, PlaceChanged)
-            and event.place.name == _WATCHED_PLACE
-            and event.place.acquired
-        ):
-            self._controller.on_alice_acquire()
-        super()._on_stream_event(event)
+    def _on_step_entered(self, step: int) -> None:
+        source = self.fleet_source
+        if isinstance(source, ScriptedFleet):
+            for cue in ENTRY_CUES.get(step, ()):
+                source.cue(cue)
+
+    def _on_done(self) -> None:
+        self.set_timer(DONE_SECONDS, self.dismiss_tour_panel)
+
+    def dismiss_tour_panel(self) -> None:
+        try:
+            self.screen_stack[0].query_one(TourPanel).remove()
+        except NoMatches:
+            return
+
+    def on_key(self, event: events.Key) -> None:
+        # Any key after the closing line ends the tour chrome; the key
+        # itself still reaches whatever it was meant for.
+        if self._controller.done:
+            self.dismiss_tour_panel()
 
     def action_tour_skip(self) -> None:
-        self._controller.skip()
+        if self._controller.done:
+            self.dismiss_tour_panel()
+        else:
+            self._controller.skip()
 
 
-def run_tour(speed: float = 1.0) -> None:
-    TourApp(speed=speed).run()
+def run_tour() -> None:
+    TourApp().run()

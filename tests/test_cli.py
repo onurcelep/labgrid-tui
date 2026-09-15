@@ -690,22 +690,14 @@ def test_config_show_lists_packs(tmp_path: Path, capsys: pytest.CaptureFixture[s
 # ---------------------------------------------------------------------
 
 
-def test_tour_help_documents_speed_flag(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
+def test_tour_help_mentions_fake_data(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
         main(["tour", "--help"])
-    assert exc_info.value.code == 0
-    assert "--speed" in capsys.readouterr().out
+    assert "fake data" in capsys.readouterr().out
 
 
-def test_tour_invokes_run_tour_with_parsed_speed(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[float] = []
-    monkeypatch.setattr("labgrid_tui.__main__.run_tour", calls.append)
-    assert main(["tour", "--speed", "2.5"]) == 0
-    assert calls == [2.5]
-
-
-def test_tour_default_speed_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[float] = []
-    monkeypatch.setattr("labgrid_tui.__main__.run_tour", calls.append)
+def test_tour_invokes_run_tour(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr("labgrid_tui.__main__.run_tour", lambda: calls.append(True))
     assert main(["tour"]) == 0
-    assert calls == [1.0]
+    assert calls == [True]

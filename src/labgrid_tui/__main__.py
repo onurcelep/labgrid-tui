@@ -76,13 +76,6 @@ CONFIG_TEMPLATE = """\
 """
 
 
-def _positive_float(value: str) -> float:
-    parsed = float(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError(f"must be a positive number, got {value!r}")
-    return parsed
-
-
 def _common_parser() -> argparse.ArgumentParser:
     """Flags accepted at every subcommand level, not just before it.
 
@@ -213,14 +206,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     pack_show_parser.add_argument("name")
 
-    tour_parser = subparsers.add_parser(
-        "tour", help="guided walkthrough on fake data, no coordinator needed"
-    )
-    tour_parser.add_argument(
-        "--speed",
-        type=_positive_float,
-        default=1.0,
-        help="time-scale factor for the tour's scripted events (default: 1.0)",
+    subparsers.add_parser(
+        "tour",
+        help="guided walkthrough on fake data, no coordinator needed",
+        description="Guided walkthrough of the dashboard on fake data: no coordinator, "
+        "no network, nothing written to your config. n skips a step, q quits.",
     )
 
     return parser
@@ -599,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_pack_show(packs_path, args.name)
 
     if args.subcommand == "tour":
-        run_tour(args.speed)
+        run_tour()
         return 0
 
     try:
