@@ -4,17 +4,19 @@ required.
 Reuses every seam LabgridTuiApp exposes for a downstream shell (FleetSource,
 ActionRunner, in-memory config/coordinators/packs/ui-state injection)
 instead of forking the dashboard: the tour is a thin subclass, not a
-parallel implementation.
+parallel implementation. Its own chrome is a welcome card, a floating step
+card over the fleet table, the same step text inside any modal on top, and
+an outline around whatever the step asks the user to look at.
 """
 
+import contextlib
 from collections.abc import Callable
 
 from textual import events
-from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.css.query import NoMatches
 from textual.screen import Screen
-from textual.widgets import Footer
 
 from labgrid_tui.config import Config
 from labgrid_tui.coordinators import CoordinatorEntry, Coordinators
@@ -22,25 +24,23 @@ from labgrid_tui.tour.fleet import ScriptedFleet, fleet_source_factory
 from labgrid_tui.tour.pack import load_robot_pack
 from labgrid_tui.tour.runner import TourActionRunner
 from labgrid_tui.tour.steps import DELAYED_ENTRY_CUES, ENTRY_CUES, TourController
+from labgrid_tui.tour.welcome import WelcomeScreen
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.app import LabgridTuiApp
+from labgrid_tui.ui.guidance import FOCUS_CLASS, TourGuidance
 from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
 from labgrid_tui.ui.uistate import UiState
-from labgrid_tui.ui.widgets.tour_panel import TourPanel
+from labgrid_tui.ui.widgets.tour_card import CARD_TOP, CARD_WIDTH, TourCard
 
 SUB_TITLE = "TOUR (fake data)"
 LAB_ADDRESS = "tour:lab"
 DESK_ADDRESS = "tour:desk"
 
-# How long the closing line stays after the last step; any key ends it.
-DONE_SECONDS = 6.0
 # Delay before a step's "a moment later" cue (see steps.DELAYED_ENTRY_CUES).
 DELAYED_CUE_SECONDS = 2.5
-WELCOME_TITLE = "Welcome to labgrid-tui"
-WELCOME_TEXT = (
-    "A tour on fake data: six benches, nothing here reaches a real lab. "
-    "Follow the bar above the footer; [b]n[/] skips a step, [b]q[/] quits."
-)
+
+# Dashboard widgets a step may ask the user to look at (ids without "#").
+_DASHBOARD_FOCUS_IDS = ("fleet-table", "activity-log", "status-bar")
 
 
 def _tour_config() -> Config:
@@ -64,6 +64,14 @@ def _tour_coordinators() -> Coordinators:
 
 
 class TourDashboardScreen(DashboardScreen):
+    DEFAULT_CSS = """
+    /* The card lives on its own layer inside the table row: absolutely
+       positioned there, it floats over free table space and the table
+       keeps its full size. */
+    TourDashboardScreen #main-row { layers: base tour; }
+    TourDashboardScreen #main-row > DeviceTable { layer: base; }
+    """
+
     def __init__(
         self,
         runner: ActionRunner,
@@ -71,17 +79,42 @@ class TourDashboardScreen(DashboardScreen):
         persist: Callable[[], None],
         tour_hook: TourHook,
         controller: TourController,
+        guidance_provider: Callable[[], TourGuidance | None],
     ) -> None:
-        super().__init__(runner, ui_state, persist, tour_hook=tour_hook)
+        super().__init__(
+            runner, ui_state, persist, tour_hook=tour_hook, guidance_provider=guidance_provider
+        )
         self._controller = controller
 
-    def compose(self) -> ComposeResult:
-        # The panel is a normal flow widget placed before the docked Footer,
-        # so it takes the row above the key hints rather than covering them.
-        for widget in super().compose():
-            if isinstance(widget, Footer):
-                yield TourPanel(self._controller)
-            yield widget
+    def show_card(self) -> TourCard:
+        card = TourCard(self._controller)
+        self.query_one("#main-row", Horizontal).mount(card)
+        self.call_after_refresh(self.place_card)
+        return card
+
+    def place_card(self) -> None:
+        try:
+            card = self.query_one(TourCard)
+            row = self.query_one("#main-row", Horizontal)
+        except NoMatches:
+            return
+        width, height = row.content_size
+        x = max(0, width - CARD_WIDTH - 1)
+        # Below the fake benches when the table is tall enough; otherwise as
+        # low as still fits, so the card never runs past the table row.
+        y = max(0, min(CARD_TOP, height - card.outer_size.height))
+        card.styles.offset = (x, y)
+
+    def on_resize(self, event: events.Resize) -> None:
+        super().on_resize(event)
+        self.place_card()
+
+    def set_focus_frame(self, target: str | None) -> None:
+        for widget_id in _DASHBOARD_FOCUS_IDS:
+            try:
+                self.query_one(f"#{widget_id}").set_class(widget_id == target, FOCUS_CLASS)
+            except NoMatches:
+                continue
 
 
 class TourApp(LabgridTuiApp):
@@ -89,16 +122,17 @@ class TourApp(LabgridTuiApp):
         *LabgridTuiApp.BINDINGS,
         # priority=True: the last step opens CoordinatorSelector, which binds
         # "n" to "new coordinator" (see coordinator_selector.py); without
-        # priority, that screen-level binding would win and "skip" (which
-        # TourPanel advertises on every step) would silently do nothing
-        # while that modal is on top.
+        # priority, that screen-level binding would win and "skip" (which the
+        # footer advertises on every step) would silently do nothing while
+        # that modal is on top.
         Binding("n", "tour_skip", "Skip step", show=True, priority=True),
     ]
 
     def __init__(self) -> None:
         self._controller = TourController()
+        self._controller.on_change = self._on_step_changed
         self._controller.on_enter = self._on_step_entered
-        self._controller.on_done = self._on_done
+        self.started = False
         super().__init__(
             _tour_config(),
             coordinators=_tour_coordinators(),
@@ -134,11 +168,32 @@ class TourApp(LabgridTuiApp):
             self._persist_ui_state,
             self._on_tour_hook,
             self._controller,
+            self.guidance,
+        )
+
+    @property
+    def dashboard(self) -> TourDashboardScreen:
+        screen = self.screen_stack[0]
+        assert isinstance(screen, TourDashboardScreen)
+        return screen
+
+    def guidance(self) -> TourGuidance | None:
+        """What a modal pushed right now should show; nothing before the tour starts."""
+        if not self.started:
+            return None
+        return TourGuidance(
+            text=f"{self._controller.title()}: {self._controller.label()}",
+            focus=self._controller.modal_focus(),
         )
 
     def on_mount(self) -> None:
         super().on_mount()
-        self.notify(WELCOME_TEXT, title=WELCOME_TITLE, timeout=10)
+        self.push_screen(WelcomeScreen(), callback=self._start_tour)
+
+    def _start_tour(self, _result: None) -> None:
+        self.started = True
+        self.dashboard.show_card()
+        self.dashboard.set_focus_frame(self._controller.dashboard_focus())
 
     def _on_tour_hook(self, name: str, detail: str) -> None:
         if name == "cursor_changed":
@@ -147,6 +202,15 @@ class TourApp(LabgridTuiApp):
             self._controller.on_detail_open()
         elif name == "detail_close":
             self._controller.on_detail_close()
+
+    def _on_step_changed(self, _label: str) -> None:
+        with contextlib.suppress(NoMatches):
+            self.dashboard.query_one(TourCard).refresh_text()
+        self.dashboard.place_card()
+        self.dashboard.set_focus_frame(self._controller.dashboard_focus())
+        update = getattr(self.screen, "update_guidance", None)
+        if callable(update):
+            update(self.guidance())
 
     def _on_step_entered(self, step: int) -> None:
         for cue in ENTRY_CUES.get(step, ()):
@@ -167,26 +231,14 @@ class TourApp(LabgridTuiApp):
             # the cue instead of the next 10 s tick.
             self.run_worker(self._poll_reservations(), exclusive=False)
 
-    def _on_done(self) -> None:
-        self.set_timer(DONE_SECONDS, self.dismiss_tour_panel)
-
-    def dismiss_tour_panel(self) -> None:
-        try:
-            self.screen_stack[0].query_one(TourPanel).remove()
-        except NoMatches:
-            return
-
-    def on_key(self, event: events.Key) -> None:
-        # Any key after the closing line ends the tour chrome; the key
-        # itself still reaches whatever it was meant for.
-        if self._controller.done:
-            self.dismiss_tour_panel()
-
     def action_tour_skip(self) -> None:
-        if self._controller.done:
-            self.dismiss_tour_panel()
-        else:
-            self._controller.skip()
+        # App-level priority binding: it fires before the welcome card's own
+        # "n", so starting the tour is this action's job there.
+        if not self.started:
+            if isinstance(self.screen, WelcomeScreen):
+                self.screen.action_start()
+            return
+        self._controller.skip()
 
 
 def run_tour() -> None:
