@@ -7,9 +7,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 WELCOME_LINES = (
-    "labgrid-tui is a live view of a labgrid lab: every bench, who holds it, "
-    "what it offers, and the exact labgrid-client line for each action, "
-    "ready to copy.",
+    "labgrid-tui is a live view of a labgrid lab: every place, who holds it, "
+    "the resources it matches, and the exact labgrid-client line for each "
+    "action, ready to copy.",
     "It only reads the coordinator: see the whole lab at once, learn the CLI "
     "by using it, change nothing by accident.",
     "This tour runs on fake data. Keys work as usual; a card names the next "

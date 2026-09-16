@@ -597,7 +597,7 @@ async def test_columns_drop_in_priority_order_and_come_back_on_widening() -> Non
                 for key in ("Comment", "Tags", "Changed", "User")
                 if key not in labels and key not in dropped
             ]
-            for protected in ("M", "Name", "S", "Capabilities"):
+            for protected in ("M", "Name", "S", "Resources"):
                 assert protected in labels, (width, labels)
         # Columns leave in priority order, Comment first, and Tags
         # outlives it: at 80 columns the tour still has tags to point at.

@@ -4,6 +4,8 @@ table."""
 
 from pathlib import Path
 
+from labgrid_tui.model.capabilities import DEFAULT_CAPABILITIES
+from labgrid_tui.ui.format import abbrev
 from labgrid_tui.ui.widgets.help_text import (
     TAB_ACTIVITY_LOG,
     TAB_OPERATIONS,
@@ -19,8 +21,21 @@ def test_help_text_covers_status_dot_legend() -> None:
 
 
 def test_help_text_covers_table_columns() -> None:
-    for word in ("table columns", "capabilities", "changed", "comment", "tags"):
+    for word in ("table columns", "resources", "changed", "comment", "tags"):
         assert word in TAB_TABLE_REFERENCE
+
+
+def test_chip_legend_is_generated_from_the_class_mapping() -> None:
+    """Every resource class the app knows has a row, chip included: the
+    legend is derived from the mapping, so adding a class there cannot
+    leave the help behind."""
+    assert "resource chips" in TAB_TABLE_REFERENCE
+    for cls, capability in DEFAULT_CAPABILITIES.items():
+        assert f"| `{cls}` | `{abbrev(capability)}` |" in TAB_TABLE_REFERENCE
+    # Spot checks for the vocabulary the column header promises.
+    assert "| `NetworkSerialPort` | `SER` |" in TAB_TABLE_REFERENCE
+    assert "| `NetworkPowerPort` | `PWR` |" in TAB_TABLE_REFERENCE
+    assert "| `NetworkService` | `SSH` |" in TAB_TABLE_REFERENCE
 
 
 def test_help_text_describes_the_tags_column_and_not_dynamic_ones() -> None:

@@ -67,7 +67,7 @@ coordinator = "coordinator.example.org:20408"   # or a named coordinator
 prefix = "labgrid-client -x coordinator.example.org:20408"   # optional
 
 [capabilities]
-MyCustomResource = "power"        # resource class -> capability chip
+MyCustomResource = "power"        # resource class -> resource chip
 
 [[commands]]                      # extra labgrid-client entries
 category = "Custom"

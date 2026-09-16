@@ -150,7 +150,7 @@ class CommandProvider(Provider):
             cmds.append(
                 _Command(
                     "Filter: Search places",
-                    "Open the filter bar to search by name, comment, tags, or capabilities",
+                    "Open the filter bar to search by name, comment, tags, or resources",
                     dashboard.action_show_filter,
                 )
             )

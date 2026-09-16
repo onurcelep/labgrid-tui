@@ -127,7 +127,7 @@ async def test_table_columns_by_width(
         table = app.screen.query_one(DeviceTable)
         labels = [str(col.label) for col in table.ordered_columns]
         # Protected columns are never dropped, at any width.
-        for required in ("M", "Name", "S", "Capabilities"):
+        for required in ("M", "Name", "S", "Resources"):
             assert required in labels, (size, labels)
         if size[0] >= 160:
             # Comfortable width: every column fits, Tags included.
