@@ -140,6 +140,32 @@ async def test_table_columns_by_width(
         assert "Tags" in labels, (size, labels)
 
 
+@pytest.mark.parametrize("size", [(60, 24), (80, 24), (120, 24), (160, 24)])
+async def test_tag_pairs_shared_by_every_place_are_cut_first(
+    fake_coordinator: tuple[FakeCoordinator, str], size: tuple[int, int]
+) -> None:
+    """Every bench in this fleet carries site=lab1 and rack=a; only owner
+    tells one from another. Width pressure takes the two shared pairs and
+    leaves owner, on every row at once."""
+    servicer, address = fake_coordinator
+    _fleet(servicer)
+    app = LabgridTuiApp(_config(address))
+    async with app.run_test(size=size) as pilot:
+        await _wait_places(app, pilot, 8)
+        await pilot.pause()
+        table = app.screen.query_one(DeviceTable)
+        cells = [str(table.get_cell(f"bench-{i:02d}", "tags")) for i in range(8)]
+        # owner is what separates the benches, so it survives at every width
+        # and starts at the same column on every row.
+        assert all(cell.startswith(f"owner=user{i}") for i, cell in enumerate(cells))
+        if size[0] == 60:
+            # No room for three pairs: the two shared ones go, and they go
+            # from every row at once, never from some of them.
+            assert not any("site=" in cell or "rack=" in cell for cell in cells)
+        if size[0] >= 160:
+            assert all("rack=a" in cell and "site=lab1" in cell for cell in cells)
+
+
 async def test_table_columns_restored_after_widening(
     fake_coordinator: tuple[FakeCoordinator, str],
 ) -> None:

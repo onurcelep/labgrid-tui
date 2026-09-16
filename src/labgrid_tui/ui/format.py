@@ -4,7 +4,8 @@ The rendering vocabulary (colored capability abbreviations, status dots,
 "5d ago" timestamps) stays generic labgrid: nothing lab-specific.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
 from rich.text import Text
 
@@ -61,21 +62,113 @@ def format_age(seconds: float) -> str:
     return f"{int(seconds // 86400)}d ago"
 
 
-def format_tags(tags: Mapping[str, str], width: int | None = None) -> Text | str:
-    """Tags on one line, the way labgrid-client prints them.
+@dataclass(frozen=True)
+class TagSlot:
+    """One key's fixed column inside the Tags cell.
 
-    Sorted ``key=value`` pairs separated by a single space, keys dimmed so
-    the values a lab actually scans for stand out. Cut to *width* without
-    an ellipsis: the visible pairs stay exactly what the place carries.
+    *width* is the widest ``key=value`` the fleet carries for this key, so
+    every row reserves the same room and the pairs line up vertically.
+    *constant* marks a key every place has with one and the same value:
+    it separates no place from any other, so it is dimmed and is the first
+    thing dropped when the cell has to be cut.
+    """
+
+    key: str
+    width: int
+    constant: bool
+
+
+@dataclass(frozen=True)
+class TagLayout:
+    """Fleet-wide slot order for the Tags column."""
+
+    slots: tuple[TagSlot, ...] = ()
+
+    @property
+    def total_width(self) -> int:
+        """Width of a fully populated cell, one space between slots."""
+        if not self.slots:
+            return 0
+        return sum(slot.width for slot in self.slots) + len(self.slots) - 1
+
+
+def tag_layout(places: Iterable[Mapping[str, str]]) -> TagLayout:
+    """Slot layout over the tags of *places*, the whole fleet.
+
+    Keys are ordered by how many places carry them (widest coverage first,
+    ties alphabetical), so the pairs most rows share sit leftmost and the
+    cell reads as columns rather than as a sentence. Deriving this from the
+    fleet and not from the filtered rows keeps the columns from jumping
+    around whenever a filter hides a place.
+    """
+    total = 0
+    counts: dict[str, int] = {}
+    widths: dict[str, int] = {}
+    values: dict[str, set[str]] = {}
+    for tags in places:
+        total += 1
+        for key, value in tags.items():
+            counts[key] = counts.get(key, 0) + 1
+            widths[key] = max(widths.get(key, 0), len(key) + 1 + len(value))
+            values.setdefault(key, set()).add(value)
+    return TagLayout(
+        tuple(
+            TagSlot(
+                key=key,
+                width=widths[key],
+                constant=counts[key] == total and len(values[key]) == 1,
+            )
+            for key in sorted(counts, key=lambda key: (-counts[key], key))
+        )
+    )
+
+
+def fit_layout(layout: TagLayout, width: int) -> TagLayout:
+    """The slots of *layout* that survive a cell cut to *width*.
+
+    Constant-key slots go first, rightmost first, because they tell the
+    reader nothing one place at a time. Derived from the layout alone, not
+    from a row: every row must drop the same slots or the remaining pairs
+    stop lining up.
+    """
+    slots = list(layout.slots)
+    while TagLayout(tuple(slots)).total_width > width:
+        constant = [i for i, slot in enumerate(slots) if slot.constant]
+        if not constant:
+            break
+        slots.pop(constant[-1])
+    return TagLayout(tuple(slots))
+
+
+def format_tags(
+    tags: Mapping[str, str], layout: TagLayout, *, width: int | None = None
+) -> Text | str:
+    """One place's tags, laid out in *layout*'s slots.
+
+    Each pair is padded to its slot so the same key sits at the same column
+    on every row, and a place missing a key leaves that slot blank. Keys
+    stay dim so the values a lab scans for stand out; a constant key is
+    dimmed whole, value included. Cut to *width* without an ellipsis: the
+    visible pairs stay exactly what the place carries.
     """
     if not tags:
         return "-"
     text = Text()
-    for i, (key, value) in enumerate(sorted(tags.items())):
+    for i, slot in enumerate(layout.slots):
         if i:
             text.append(" ")
-        text.append(f"{key}=", style="dim")
-        text.append(value)
+        value = tags.get(slot.key)
+        if value is None:
+            text.append(" " * slot.width)
+            continue
+        if slot.constant:
+            text.append(f"{slot.key}={value}", style="dim")
+        else:
+            text.append(f"{slot.key}=", style="dim")
+            text.append(value)
+        text.append(" " * (slot.width - len(slot.key) - 1 - len(value)))
+    text.rstrip()
     if width is not None:
         text.truncate(width, overflow="crop")
+        text.rstrip()
     return text

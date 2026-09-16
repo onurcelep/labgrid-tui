@@ -2,6 +2,7 @@ from textual.app import App, ComposeResult
 
 from labgrid_tui.coordinator.models import Place, Resource, ResourceMatchPattern
 from labgrid_tui.coordinator.stream import ConnectionChanged, ConnState
+from labgrid_tui.ui.format import tag_layout
 from labgrid_tui.ui.store import FleetStore
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 
@@ -26,6 +27,12 @@ def _place(
         changed=0.0,
         reservation=None,
     )
+
+
+def _use_layout(table: DeviceTable, places: list[Place], width: int | None = None) -> None:
+    """Point *table* at the layout of *places*, the way refresh_rows does."""
+    table._tag_layout = tag_layout([place.tags for place in places])
+    table._set_tag_render(width)
 
 
 def _store(*places: Place) -> FleetStore:
@@ -388,11 +395,11 @@ async def test_status_dot_is_red_and_dimmed_without_usable_resources() -> None:
         assert isinstance(name_cell, Text) and "dim" in str(name_cell.style)
 
 
-async def test_tags_cell_renders_sorted_dimmed_pairs() -> None:
+async def test_tags_cell_renders_pairs_with_dimmed_keys() -> None:
     from rich.text import Text
 
     store = _store(
-        _place("tb-a", tags={"site": "lab1", "board": "imx8", "env": "dev"}),
+        _place("tb-a", tags={"site": "hall-a", "board": "imx8", "env": "dev"}),
         _place("tb-b"),
     )
     app = _Harness()
@@ -402,13 +409,87 @@ async def test_tags_cell_renders_sorted_dimmed_pairs() -> None:
         await pilot.pause()
         tagged = table.get_cell("tb-a", "tags")
         assert isinstance(tagged, Text)
-        assert tagged.plain == "board=imx8 env=dev site=lab1"
+        assert tagged.plain == "board=imx8 env=dev site=hall-a"
         dimmed = {
             tagged.plain[span.start : span.end] for span in tagged.spans if "dim" in str(span.style)
         }
+        # Nothing is constant here: tb-b carries none of these keys, so the
+        # keys dim and the values stay readable.
         assert dimmed == {"board=", "env=", "site="}
         # Untagged places get the same "-" every other empty cell uses.
         assert str(table.get_cell("tb-b", "tags")) == "-"
+
+
+async def test_tag_pairs_line_up_across_rows_with_different_tag_sets() -> None:
+    """Fleet-wide slots: the same key starts at the same column on every
+    row, and a place missing a key leaves that slot blank rather than
+    sliding the next pair left."""
+    from rich.text import Text
+
+    store = _store(
+        _place("tb-a", tags={"board": "imx8", "owner": "ci"}),
+        _place("tb-b", tags={"board": "stm32mp1", "owner": "qa", "rack": "r2"}),
+        _place("tb-c", tags={"board": "am62x"}),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        cells = {name: table.get_cell(name, "tags") for name in ("tb-a", "tb-b", "tb-c")}
+        assert all(isinstance(cell, Text) for cell in cells.values())
+        plain = {name: cell.plain for name, cell in cells.items() if isinstance(cell, Text)}
+        assert plain["tb-a"] == "board=imx8     owner=ci"
+        assert plain["tb-b"] == "board=stm32mp1 owner=qa rack=r2"
+        assert plain["tb-c"] == "board=am62x"
+        assert plain["tb-a"].index("owner=") == plain["tb-b"].index("owner=")
+
+
+async def test_tag_layout_covers_the_fleet_not_the_filtered_rows() -> None:
+    """A filter hides rows; it must not re-measure the slots underneath the
+    rows that remain, or every keystroke in the filter would shuffle them."""
+    from rich.text import Text
+
+    store = _store(
+        _place("tb-a", tags={"board": "imx8", "owner": "ci"}),
+        _place("tb-b", tags={"board": "stm32mp1", "owner": "ci"}),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        unfiltered = table.get_cell("tb-a", "tags")
+        table.filter_query = "tb-a"
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        filtered = table.get_cell("tb-a", "tags")
+        assert isinstance(unfiltered, Text) and isinstance(filtered, Text)
+        # Widths still come from bench tb-b, and owner is still constant
+        # across the fleet even though only one row is on screen.
+        assert filtered.plain == unfiltered.plain == "board=imx8     owner=ci"
+
+
+async def test_tags_shared_by_every_place_are_dimmed_whole() -> None:
+    from rich.text import Text
+
+    store = _store(
+        _place("tb-a", tags={"owner": "ci", "site": "hall-a"}),
+        _place("tb-b", tags={"owner": "qa", "site": "hall-a"}),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        cell = table.get_cell("tb-a", "tags")
+        assert isinstance(cell, Text)
+        dimmed = {
+            cell.plain[span.start : span.end] for span in cell.spans if "dim" in str(span.style)
+        }
+        # site is on every place with one value: the pair as a whole recedes.
+        # owner separates the two places, so its value stays readable.
+        assert dimmed == {"owner=", "site=hall-a"}
 
 
 async def test_tags_shrink_before_any_column_is_dropped() -> None:
@@ -416,16 +497,20 @@ async def test_tags_shrink_before_any_column_is_dropped() -> None:
     plainly and with no ellipsis, while every column keeps its place. Only
     once the cut has nothing left to give does a column go, and Comment
     is the one that goes."""
-    from labgrid_tui.ui.widgets.device_table import TAGS_MIN_WIDTH, _truncated
+    from labgrid_tui.ui.widgets.device_table import TAGS_MIN_WIDTH
 
-    place = _place("bench-01", comment="rack A", tags={"board": "imx8", "site": "lab1"})
+    places = [
+        _place("bench-01", comment="rack A", tags={"board": "imx8", "site": "hall-a"}),
+        _place("bench-02", comment="rack A", tags={"board": "am62x", "site": "hall-b"}),
+    ]
     app = _Harness()
     async with app.run_test(size=(200, 10)) as pilot:
         table = app.query_one(DeviceTable)
         await pilot.pause()
-        rows = [table._cell_values(place, [], None, 0.0)]
+        _use_layout(table, places)
+        rows = [table._cell_values(place, [], None, 0.0) for place in places]
         full = str(rows[0]["tags"])
-        assert full == "board=imx8 site=lab1"
+        assert full == "board=imx8  site=hall-a"  # board slot fits "board=am62x"
 
         assert "tags" in table._visible_columns(rows, 200)
         assert table._tags_width is None  # room for every pair: no cut
@@ -447,12 +532,39 @@ async def test_tags_shrink_before_any_column_is_dropped() -> None:
         assert cuts  # Tags is cut over a range of widths before Comment goes
         assert cuts[0] > cuts[-1] >= TAGS_MIN_WIDTH
 
-        cell = _truncated(table._cell_values(place, [], None, 0.0)["tags"], cuts[-1])
-        assert str(cell) == full[: cuts[-1]].rstrip()
-        assert "\u2026" not in str(cell)
-        # A cut landing on the separator leaves no trailing blank behind.
-        on_space = _truncated(table._cell_values(place, [], None, 0.0)["tags"], 11)
-        assert str(on_space) == "board=imx8"
+        # Back to the narrowest width that still showed Comment, and render
+        # a cell at the cut that width settled on.
+        table._visible_columns(rows, drop_width + 1)
+        assert table._tags_width == cuts[-1]
+        cell = str(table._cell_values(places[0], [], None, 0.0)["tags"])
+        assert cell == full[: cuts[-1]].rstrip()
+        assert "\u2026" not in cell
+
+
+async def test_constant_tag_slots_are_dropped_first_and_rows_stay_aligned() -> None:
+    """Under width pressure the pairs every place shares go before anything
+    that tells two places apart, and they go from every row at once."""
+    places = [
+        _place("bench-01", tags={"owner": "ci", "rack": "r2", "site": "hall-a"}),
+        _place("bench-02", tags={"owner": "release", "site": "hall-a"}),
+    ]
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        await pilot.pause()
+        _use_layout(table, places)
+        # site is on both places with one value; owner and rack are not.
+        assert {slot.key for slot in table._tag_layout.slots if slot.constant} == {"site"}
+
+        wide = [str(table._cell_values(place, [], None, 0.0)["tags"]) for place in places]
+        assert wide == ["owner=ci      site=hall-a rack=r2", "owner=release site=hall-a"]
+
+        _use_layout(table, places, width=24)
+        narrow = [str(table._cell_values(place, [], None, 0.0)["tags"]) for place in places]
+        # site went from both rows at once, so rack moved left on the row
+        # that has it and still ends where the slot says it ends.
+        assert narrow == ["owner=ci      rack=r2", "owner=release"]
+        assert not any("site=" in cell for cell in narrow)
 
 
 async def test_columns_drop_in_priority_order_and_come_back_on_widening() -> None:

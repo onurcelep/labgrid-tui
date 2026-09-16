@@ -2,7 +2,8 @@
 
 Rendering uses a consistent dashboard vocabulary: colored status dots,
 capability abbreviation chips, humanized change ages, and the place's
-tags on one line the way labgrid-client prints them.
+tags on one line, in fleet-wide slots so the same key sits at the same
+column on every row.
 """
 
 import time
@@ -19,7 +20,14 @@ from textual.widgets.data_table import RowDoesNotExist
 from labgrid_tui.coordinator.models import Place, Resource
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.model.capabilities import capabilities_for, capability_of
-from labgrid_tui.ui.format import capability_chips, format_age, format_tags
+from labgrid_tui.ui.format import (
+    TagLayout,
+    capability_chips,
+    fit_layout,
+    format_age,
+    format_tags,
+    tag_layout,
+)
 from labgrid_tui.ui.layout import is_narrow, middle_ellipsis
 from labgrid_tui.ui.store import FleetStore
 from labgrid_tui.ui.widgets.filter_bar import matches_filter
@@ -89,19 +97,6 @@ def _cell_fingerprint(cell: str | Text) -> str:
     return cell
 
 
-def _truncated(cell: str | Text, width: int) -> str | Text:
-    """Cut *cell* to *width* with no ellipsis, so what is left stays exact.
-
-    The cut lands mid-pair as often as not; trailing blanks left by a cut
-    on a separator would read as a column wider than its content.
-    """
-    if isinstance(cell, Text):
-        cell.truncate(width, overflow="crop")
-        cell.rstrip()
-        return cell
-    return cell[:width].rstrip()
-
-
 class DeviceTable(DataTable[str | Text]):
     DEFAULT_CSS = """
     DeviceTable {
@@ -169,6 +164,11 @@ class DeviceTable(DataTable[str | Text]):
         # full; set by the column-priority pass, which is what knows how
         # much room is left once every other column has its own.
         self._tags_width: int | None = None
+        # Fleet-wide tag slots, and the subset of them that survives
+        # _tags_width. Both are per-fleet, never per-row: rows only line up
+        # if every one of them renders the same slots at the same widths.
+        self._tag_layout = TagLayout()
+        self._render_layout = TagLayout()
         self._column_keys: tuple[str, ...] = ()
         # Diff cache for cell-level updates: place name -> per-column
         # fingerprints, in the same order as _column_keys. Ordered list of
@@ -206,9 +206,10 @@ class DeviceTable(DataTable[str | Text]):
     ) -> tuple[str, ...]:
         """Which columns fit, and how wide the Tags cells may render.
 
-        Sets ``_tags_width`` as a side effect: Tags is the one column that
-        gives up width before anything gives up its place, so a heavily
-        tagged fleet costs its own cells a cut, not the table a column.
+        Sets ``_tags_width`` and ``_render_layout`` as side effects: Tags is
+        the one column that gives up width before anything gives up its
+        place, so a heavily tagged fleet costs its own cells a cut, not the
+        table a column.
         """
         content_width = {key: len(label) for label, key in _ALL_COLUMNS}
         for row in rows:
@@ -217,12 +218,17 @@ class DeviceTable(DataTable[str | Text]):
                 if len(text) > content_width[key]:
                     content_width[key] = len(text)
 
+        # Tags measures against the layout, not against the widest row:
+        # every row reserves every slot, so a row whose last key is missing
+        # still holds that slot's width open.
+        content_width["tags"] = max(content_width["tags"], self._tag_layout.total_width)
+
         shown = {key for _label, key in _ALL_COLUMNS}
 
         def total_width() -> int:
             return sum(content_width[key] + _CELL_PADDING for key in shown)
 
-        self._tags_width = None
+        tags_width: int | None = None
         natural_tags = content_width["tags"]
         if available_width > 0:
             # Shrink Tags first, so a wide tag set costs its own cells a
@@ -240,8 +246,21 @@ class DeviceTable(DataTable[str | Text]):
             if slack > 0:
                 content_width["tags"] = min(natural_tags, content_width["tags"] + slack)
             if content_width["tags"] < natural_tags:
-                self._tags_width = content_width["tags"]
+                tags_width = content_width["tags"]
+        self._set_tag_render(tags_width)
         return tuple(key for _label, key in _ALL_COLUMNS if key in shown)
+
+    def _set_tag_render(self, width: int | None) -> None:
+        """Fix how every Tags cell renders until the next width decision.
+
+        Which slots a cut keeps is a property of the layout and the width,
+        never of one place's tags: settling it here, once, is what keeps the
+        surviving pairs in the same columns on every row.
+        """
+        self._tags_width = width
+        self._render_layout = (
+            self._tag_layout if width is None else fit_layout(self._tag_layout, width)
+        )
 
     def cursor_place(self) -> str | None:
         if not self.row_count:
@@ -272,6 +291,12 @@ class DeviceTable(DataTable[str | Text]):
         # blip.
         stale = store.conn is not ConnState.LIVE or not store.places
         now = time.time()
+        # Over the whole fleet, not the filtered rows: a filter must not be
+        # able to shift the tag columns or turn a key constant. A changed
+        # layout re-renders every Tags cell, so the diff pass picks it up
+        # like any other cell change and re-measures the column with it.
+        self._tag_layout = tag_layout(place.tags for place in store.places.values())
+        self._set_tag_render(self._tags_width)
         # (place, resources) pairs: resources_of is O(places x resources)
         # per call, so it is computed once here per refresh and threaded
         # through instead of every consumer below re-deriving it.
@@ -364,8 +389,6 @@ class DeviceTable(DataTable[str | Text]):
         now: float,
     ) -> list[str | Text]:
         values = self._cell_values(place, resources, capability_extra, now)
-        if self._tags_width is not None:
-            values["tags"] = _truncated(values["tags"], self._tags_width)
         return [values[key] for key in self._column_keys]
 
     def _cell_values(
@@ -377,10 +400,12 @@ class DeviceTable(DataTable[str | Text]):
     ) -> dict[str, str | Text]:
         """Every candidate cell for ``place``, keyed by column key.
 
-        Computed for the full column set (not just the ones currently
-        built) and untruncated, so the column-priority width estimate in
-        ``_visible_columns`` can measure a column before deciding whether
-        to show it, shrink it, or drop it.
+        Computed for the full column set, not just the ones currently
+        built, so the column-priority width estimate in ``_visible_columns``
+        can measure a column before deciding whether to show it, shrink it,
+        or drop it. Every column but Tags renders in full here; Tags renders
+        at the width that pass last settled on, and is measured against the
+        layout instead.
         """
         online: set[str] = set()
         offline: set[str] = set()
@@ -424,7 +449,7 @@ class DeviceTable(DataTable[str | Text]):
             "s": dot,
             "capabilities": capability_chips(online, offline, unknown=unknown),
             "user": dimmed(user),
-            "tags": dimmed(format_tags(place.tags)),
+            "tags": dimmed(format_tags(place.tags, self._render_layout, width=self._tags_width)),
             "changed": dimmed(changed),
             "comment": dimmed(place.comment),
         }
