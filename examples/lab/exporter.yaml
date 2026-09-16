@@ -1,0 +1,117 @@
+## Example labgrid exporter configuration: the six benches that
+## `labgrid-tui tour` shows, as a real lab would declare them.
+##
+## Run it with:
+##   labgrid-exporter -x COORDINATOR:20408 -n rack-1 exporter.yaml
+##
+## -n sets the exporter name (it defaults to the hostname). The name is the
+## first field of every resource path, so it has to match the match patterns
+## in places.sh: rack-1/bench-01/*.
+##
+## Comments here must start with "##". labgrid renders this file through
+## Jinja2 first, with "#" as the line statement prefix and "##" as the line
+## comment prefix, so a line beginning with a single "#" is parsed as a
+## template tag and the exporter refuses to start. The same preprocessing
+## lets you replace the repetition below with a "# for" loop once your lab
+## outgrows six hand-written groups.
+##
+## Each top-level key is a resource group. Each key inside a group names a
+## resource, and the name doubles as the resource class unless an explicit
+## "cls" says otherwise. Groups have no meaning to the coordinator beyond
+## grouping: places are created separately (see places.sh) and claim groups
+## through match patterns.
+
+bench-01:
+  location: rack-1 slot 1
+
+  ## A console server or ser2net instance already speaking rfc2217. Clients
+  ## see this verbatim as a NetworkSerialPort. If the USB serial adapter is
+  ## plugged into the exporter machine itself, declare a USBSerialPort with a
+  ## udev "match" instead; labgrid runs ser2net for it and exports it to
+  ## clients as a NetworkSerialPort all the same.
+  NetworkSerialPort:
+    host: rack-1.lab.example.org
+    port: 4001
+    speed: 115200
+
+  ## Power control over plain HTTP. The "rest" backend needs no vendor
+  ## hardware: it sends GET and PUT to the URL in "host" with {index}
+  ## substituted, expecting the body "0" or "1". Swap "model" for any other
+  ## backend in labgrid.driver.power (apc, netio, gude, shelly_gen2, tplink,
+  ## ubus and so on) when you have a real PDU, or use a USBPowerPort for a
+  ## hub that switches its downstream ports.
+  NetworkPowerPort:
+    model: rest
+    host: "http://pdu-1.lab.example.org/relay/{index}/value"
+    index: 1
+
+  ## How to reach the DUT once it is up. labgrid-tui builds the ssh, scp and
+  ## rsync command lines from these values, and command packs read them back
+  ## as {res.NetworkService.address}.
+  NetworkService:
+    address: 10.0.1.2
+    username: root
+
+bench-02:
+  location: rack-1 slot 2
+  NetworkSerialPort:
+    host: rack-1.lab.example.org
+    port: 4002
+    speed: 115200
+  NetworkPowerPort:
+    model: rest
+    host: "http://pdu-1.lab.example.org/relay/{index}/value"
+    index: 2
+  NetworkService:
+    address: 10.0.2.2
+    username: root
+
+bench-03:
+  location: rack-1 slot 3
+  NetworkSerialPort:
+    host: rack-1.lab.example.org
+    port: 4003
+    speed: 115200
+  NetworkPowerPort:
+    model: rest
+    host: "http://pdu-1.lab.example.org/relay/{index}/value"
+    index: 3
+  NetworkService:
+    address: 10.0.3.2
+    username: root
+
+bench-04:
+  location: rack-1 slot 4
+  NetworkSerialPort:
+    host: rack-1.lab.example.org
+    port: 4004
+    speed: 115200
+  NetworkPowerPort:
+    model: rest
+    host: "http://pdu-1.lab.example.org/relay/{index}/value"
+    index: 4
+  NetworkService:
+    address: 10.0.4.2
+    username: root
+
+bench-05:
+  location: rack-1 slot 5
+  NetworkSerialPort:
+    host: rack-1.lab.example.org
+    port: 4005
+    speed: 115200
+  NetworkPowerPort:
+    model: rest
+    host: "http://pdu-1.lab.example.org/relay/{index}/value"
+    index: 5
+  NetworkService:
+    address: 10.0.5.2
+    username: root
+
+## The spare bench: wired into the rack, nothing exported yet. A group that
+## declares only a location exports no resources, which is what the tour's
+## bench-06 shows. The place still exists and still carries its tags, so it
+## stays visible in the table with an empty capability column. Uncomment a
+## block above and restart the exporter to fill it in.
+bench-06:
+  location: rack-1 slot 6
