@@ -533,11 +533,13 @@ async def test_tags_shrink_before_any_column_is_dropped() -> None:
         assert cuts[0] > cuts[-1] >= TAGS_MIN_WIDTH
 
         # Back to the narrowest width that still showed Comment, and render
-        # a cell at the cut that width settled on.
+        # a cell at the cut that width settled on. The site slot goes whole:
+        # a cut never leaves half a pair behind.
         table._visible_columns(rows, drop_width + 1)
         assert table._tags_width == cuts[-1]
         cell = str(table._cell_values(places[0], [], None, 0.0)["tags"])
-        assert cell == full[: cuts[-1]].rstrip()
+        assert cell == "board=imx8"
+        assert full.startswith(cell)
         assert "\u2026" not in cell
 
 

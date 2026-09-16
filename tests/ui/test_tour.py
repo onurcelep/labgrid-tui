@@ -209,14 +209,17 @@ async def test_tour_starts_live_on_fake_data_with_no_network() -> None:
 async def test_tags_column_survives_the_default_terminal() -> None:
     """80x24 is the default terminal and the size the tour is written for,
     so the first step's "Tags are whatever set-tags put on the place" must
-    have a Tags column to point at. Comment is what gives way instead."""
+    have a Tags column to point at. Comment is what gives way instead, and
+    what the column then shows is whole pairs: the site slot does not fit,
+    so it goes, rather than being shown half."""
     app = TourApp()
     async with app.run_test(size=(80, 24)) as pilot:
         await _ready(app, pilot)
         table = app.screen_stack[0].query_one(DeviceTable)
         labels = [str(column.label) for column in table.ordered_columns]
         assert "Tags" in labels, labels
-        assert str(table.get_cell("bench-01", "tags")).startswith("board=am62x")
+        # Slot padding keeps the pairs in column, hence the split().
+        assert str(table.get_cell("bench-01", "tags")).split() == ["board=am62x", "env=ci"]
 
 
 @pytest.mark.parametrize("size", [(60, 24), (80, 24), (120, 24)])

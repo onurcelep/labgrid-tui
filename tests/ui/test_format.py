@@ -145,12 +145,44 @@ def test_fit_layout_keeps_rows_aligned_after_the_cut() -> None:
     ]
     layout = tag_layout(places)
     # site is constant and goes first; rack tells the places apart and stays.
-    fitted = fit_layout(layout, 18)
+    fitted = fit_layout(layout, 20)
     assert [slot.key for slot in fitted.slots] == ["owner", "rack"]
-    rows = [format_tags(tags, fitted, width=18) for tags in places]
-    assert [str(row) for row in rows] == ["owner=ci     rack=", "owner=qa-bot"]
+    rows = [format_tags(tags, fitted, width=20) for tags in places]
+    assert [str(row) for row in rows] == ["owner=ci     rack=r2", "owner=qa-bot"]
     # Every row dropped the same slot, so what is left is still in column.
     assert fitted.slots[0].width == len("owner=qa-bot")
+
+
+def test_fit_layout_drops_a_whole_pair_rather_than_showing_half_of_one() -> None:
+    places = [
+        {"owner": "ci", "site": "hall-a", "rack": "r2"},
+        {"owner": "qa-bot", "site": "hall-a"},
+    ]
+    layout = tag_layout(places)
+    # 18 fits owner and half of rack; rack goes whole instead.
+    fitted = fit_layout(layout, 18)
+    assert [slot.key for slot in fitted.slots] == ["owner"]
+    assert [str(format_tags(tags, fitted, width=18)) for tags in places] == [
+        "owner=ci",
+        "owner=qa-bot",
+    ]
+
+
+def test_fit_layout_keeps_the_first_slot_and_crops_it_as_a_last_resort() -> None:
+    layout = tag_layout([{"board": "stm32mp1"}, {"board": "am62x"}])
+    fitted = fit_layout(layout, 6)
+    assert [slot.key for slot in fitted.slots] == ["board"]
+    assert str(format_tags({"board": "stm32mp1"}, fitted, width=6)) == "board="
+
+
+def test_format_tags_is_a_dash_when_the_cut_took_every_pair_the_place_has() -> None:
+    """A place whose only pairs sit in dropped slots reads as empty, not as
+    a place with no tags at all: it gets the same dash."""
+    layout = tag_layout([{"owner": "ci", "rack": "r2"}, {"owner": "qa"}])
+    fitted = fit_layout(layout, 8)
+    assert [slot.key for slot in fitted.slots] == ["owner"]
+    assert str(format_tags({"owner": "ci"}, fitted)) == "owner=ci"
+    assert format_tags({"rack": "r2"}, fitted) == "-"
 
 
 def test_format_tags_cut_to_width_without_an_ellipsis() -> None:
