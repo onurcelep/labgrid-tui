@@ -188,8 +188,9 @@ uv run pytest                  # unit and UI tests against a fake coordinator
 - `scripts/generate-stubs.sh` regenerates the gRPC stubs from the vendored
   proto.
 
-Release: bump `version` in `pyproject.toml`, tag `vX.Y.Z`, push the tag.
-The publish workflow uploads to PyPI through trusted publishing.
+Release: tag `vX.Y.Z` and push the tag. The version is derived from the
+tag at build time, and the publish workflow uploads to PyPI through
+trusted publishing.
 
 </details>
 
