@@ -320,7 +320,7 @@ class DeviceTable(DataTable[str | Text]):
         # A reconnect's replay clears the store to an empty transient state
         # before the fleet repopulates; pruning marks against that empty
         # snapshot would discard them for no reason other than a connection
-        # blip.
+        # blip. This says nothing about the columns: see below.
         stale = store.conn is not ConnState.LIVE or not store.places
         now = time.time()
         # Over the whole fleet, not the filtered rows: a filter must not be
@@ -337,13 +337,22 @@ class DeviceTable(DataTable[str | Text]):
 
         if not stale:
             self.marks &= set(store.places)
+
+        # Having rows to render is what the column pass needs, not a
+        # connection state: the coordinator's replay delivers every place
+        # before the sync that flips the connection to LIVE, so gating this
+        # on `stale` left a window where a full fleet rendered against the
+        # column set on_mount built, at whatever width the terminal happened
+        # to be. An empty refresh leaves the columns alone instead of
+        # re-measuring them against nothing, which is what keeps a reconnect
+        # blip from flickering the header while the table has no rows.
+        if visible:
             # Measure the Name column at its widest, aliases included, and
             # record what it would need without them; _visible_columns
             # decides between the two.
             self._show_aliases = True
             self._name_width_bare = max(
-                (len(self._name_plain(place, aliases=False)) for place, _r in visible),
-                default=0,
+                len(self._name_plain(place, aliases=False)) for place, _r in visible
             )
             rows = [
                 self._cell_values(place, resources, capability_extra, now)

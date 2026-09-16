@@ -180,6 +180,50 @@ async def test_reconnect_preserves_marks_and_cursor() -> None:
         assert table.cursor_place() == "tb-b"
 
 
+async def test_columns_are_sized_for_rows_that_arrive_before_the_connection_is_live() -> None:
+    """Regression: the coordinator's replay delivers every place before the
+    sync that flips the connection to LIVE, so a full fleet can render
+    while the store still reads as stale. Gating the column pass on that
+    flag left those rows laid out against the column set on_mount built,
+    whatever the terminal width was."""
+    store = _store(*(_place(f"bench-{i:02d}", comment="bench in rack A, long") for i in range(8)))
+    store.conn = ConnState.CONNECTING  # places in, sync not yet seen
+    app = _Harness()
+    async with app.run_test(size=(60, 24)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert table.row_count == 8
+        # 60 columns has no room for Comment, live connection or not.
+        assert "Comment" not in _labels(table)
+
+        # The sync lands; nothing about the columns changes.
+        store.conn = ConnState.LIVE
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert "Comment" not in _labels(table)
+
+
+async def test_an_empty_refresh_leaves_the_columns_alone() -> None:
+    """A reconnect blip empties the store for a moment. There is nothing to
+    measure then, and re-measuring against nothing would flicker the header
+    back to every column while the table has no rows to show."""
+    store = _store(*(_place(f"bench-{i:02d}", comment="bench in rack A, long") for i in range(8)))
+    app = _Harness()
+    async with app.run_test(size=(60, 24)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        narrow = _labels(table)
+        assert "Comment" not in narrow
+
+        store.apply(ConnectionChanged(state=ConnState.CONNECTING))  # clears places
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert table.row_count == 0
+        assert _labels(table) == narrow
+
+
 async def test_jk_move_cursor_like_arrows() -> None:
     store = _store(_place("tb-a"), _place("tb-b"))
     app = _Harness()
