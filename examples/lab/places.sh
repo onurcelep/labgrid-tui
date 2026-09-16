@@ -4,8 +4,10 @@
 #   ./places.sh          create the places, claim the exporter groups, tag them
 #   ./places.sh down     delete them again
 #
-# Reruns are safe: create is skipped for places that exist, add-match skips
-# patterns already present, and set-tags replaces the whole tag set.
+# Reruns are safe for idle places: create is skipped for places that exist,
+# add-match skips patterns already present, and set-tags replaces the whole
+# tag set. labgrid-client refuses to change a place someone else has
+# acquired, so a rerun fails on benches that are in use at that moment.
 #
 # Pair this with exporter.yaml in the same directory. labgrid-tui itself
 # never runs this script; it is documentation you apply by hand.
