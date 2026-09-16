@@ -16,7 +16,6 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.css.query import NoMatches
-from textual.geometry import Region
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static, TabbedContent, TabPane, Tabs
 from textual.widgets.option_list import Option
@@ -26,7 +25,6 @@ from labgrid_tui.model.flags import flags_hint
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_suspend
 from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
-from labgrid_tui.ui.widgets.tour_pointer import TourPointer, update_pointer
 
 # Keys the option list / screen keep handling themselves; everything else
 # that looks like text entry is forwarded to the filter input (see on_key).
@@ -180,9 +178,6 @@ class CommandOverlay(ModalScreen[None]):
             hint = Static("", id="overlay-edit-hint")
             hint.add_class("hidden")
             yield hint
-        # A screen child, not part of the modal body: the pointer is placed
-        # by screen coordinates on its own layer.
-        yield TourPointer()
 
     def on_mount(self) -> None:
         self._apply_filter("")
@@ -190,11 +185,6 @@ class CommandOverlay(ModalScreen[None]):
         if self._initial_category and self._initial_category in self._by_category:
             self.query_one(TabbedContent).active = f"tab-{_slug(self._initial_category)}"
         self._focus_active_list()
-        # Regions are not valid yet during on_mount.
-        self.call_after_refresh(self.refresh_pointer)
-
-    def on_resize(self, _event: events.Resize) -> None:
-        self.call_after_refresh(self.refresh_pointer)
 
     # ------------------------------------------------------------------
     # Tabs
@@ -227,7 +217,6 @@ class CommandOverlay(ModalScreen[None]):
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         # Focus follows the tab so up/down navigate the new list at once.
         self._focus_active_list()
-        self.call_after_refresh(self.refresh_pointer)
 
     def action_list_cursor_down(self) -> None:
         if self._editing():
@@ -402,7 +391,7 @@ class CommandOverlay(ModalScreen[None]):
         self.dismiss()
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the pointer."""
+        """Tour sideband: refresh the guidance line."""
         self._guidance = guidance
         try:
             line = self.query_one("#overlay-hint-tour", Static)
@@ -414,26 +403,3 @@ class CommandOverlay(ModalScreen[None]):
         # it, so a small terminal keeps its rows for the content.
         with contextlib.suppress(NoMatches):
             self.query_one("#overlay-hint", Static).set_class(guidance is not None, "hidden")
-        self.refresh_pointer()
-
-    def refresh_pointer(self) -> None:
-        update_pointer(self, self._pointer_region())
-
-    def _pointer_region(self) -> Region | None:
-        """The tab the guidance names ("*" = whichever is active)."""
-        target = None if self._guidance is None else self._guidance.target
-        if target == "*":
-            target = self._active_category()
-        if target is None or target not in self._by_category:
-            return None
-        try:
-            tab = self.query_one(TabbedContent).get_tab(f"tab-{_slug(target)}")
-        except (NoMatches, ValueError):
-            return None
-        return tab.region if tab.region.area else None
-
-    def _active_category(self) -> str | None:
-        slug = self._active_slug()
-        if slug is None:
-            return None
-        return next((c for c in self._by_category if _slug(c) == slug), None)

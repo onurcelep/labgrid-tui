@@ -19,6 +19,7 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.app import TourApp
 from labgrid_tui.tour.steps import STEP_COUNT
 from labgrid_tui.tour.welcome import WelcomeScreen
+from labgrid_tui.ui.guidance import DIM_CLASS
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay, _slug
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
 from labgrid_tui.ui.screens.coordinator_edit import CoordinatorEditModal
@@ -28,8 +29,18 @@ from labgrid_tui.ui.widgets.activity_log import ActivityLog
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 from labgrid_tui.ui.widgets.status_bar import StatusBar
 from labgrid_tui.ui.widgets.tour_card import TourCard
-from labgrid_tui.ui.widgets.tour_pointer import TourPointer
-from tests.ui.pointer_asserts import assert_points_at, painted_pointer
+
+# The one top-level widget each step keeps bright, in step order.
+BRIGHT_PER_STEP = (
+    "main-row",
+    "main-row",
+    "main-row",
+    "main-row",
+    "activity-log",
+    "main-row",
+    "main-row",
+    "status-bar",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -62,12 +73,6 @@ def _title(app: TourApp) -> str:
     return str(_card(app).border_title)
 
 
-def _centered_text(box: Region, length: int) -> Region:
-    """The centered text run inside a full-width, content-aligned box."""
-    width = min(length, box.width)
-    return Region(box.x + (box.width - width) // 2, box.y, width, 1)
-
-
 def _table_target(app: TourApp) -> Region:
     region = app.screen_stack[0].query_one(DeviceTable).cursor_row_region()
     assert region is not None
@@ -75,13 +80,57 @@ def _table_target(app: TourApp) -> Region:
 
 
 def _log_target(app: TourApp) -> Region:
-    region = app.screen_stack[0].query_one(ActivityLog).region
-    return Region(region.x, region.y, region.width, 1)
+    return app.screen_stack[0].query_one(ActivityLog).region
 
 
 def _status_target(app: TourApp) -> Region:
     bar = app.screen_stack[0].query_one(StatusBar)
     return Region(bar.region.x, bar.region.y, min(bar.region.width, bar.first_segment_width), 1)
+
+
+def _anchor(app: TourApp, bright: str) -> Region:
+    """The region the step card anchors to, given the widget it spotlights."""
+    if bright == "main-row":
+        return _table_target(app)
+    if bright == "activity-log":
+        return _log_target(app)
+    return _status_target(app)
+
+
+def _dim_state(app: TourApp) -> dict[str, bool]:
+    """Whether each top-level widget of the dashboard is dimmed, by id."""
+    return {
+        child.id or type(child).__name__: child.has_class(DIM_CLASS)
+        for child in app.screen_stack[0].children
+        if not isinstance(child, TourCard)
+    }
+
+
+def _card_region(app: TourApp) -> Region:
+    """The step card's region as the compositor placed it."""
+    screen = app.screen_stack[0]
+    placed = screen._compositor.visible_widgets.get(screen.query_one(TourCard))
+    assert placed is not None, "the step card is not painted"
+    region, *_rest = placed
+    return region
+
+
+def _assert_spotlight(app: TourApp, bright: str | None) -> None:
+    """Exactly *bright* keeps full colour; every other top-level widget dims."""
+    state = _dim_state(app)
+    if bright is None:
+        assert not any(state.values()), state
+        return
+    assert state[bright] is False, state
+    assert all(dim for name, dim in state.items() if name != bright), state
+
+
+def _assert_card_anchored(app: TourApp, target: Region, size: tuple[int, int]) -> None:
+    card = _card_region(app)
+    assert not card.overlaps(target), (card, target)
+    assert card.y == target.bottom or card.bottom == target.y, (card, target)
+    assert card.x >= 0 and card.y >= 0, card
+    assert card.right <= size[0] and card.bottom <= size[1], card
 
 
 async def _ready(app: TourApp, pilot: object) -> None:
@@ -122,15 +171,15 @@ async def test_tour_starts_live_on_fake_data_with_no_network() -> None:
 
 
 @pytest.mark.parametrize("size", [(120, 40), (100, 30)])
-async def test_welcome_card_then_step_card_inside_the_table_row(size: tuple[int, int]) -> None:
+async def test_welcome_card_then_a_spotlit_step_card(size: tuple[int, int]) -> None:
     app = TourApp()
     async with app.run_test(size=size) as pilot:
         assert await _wait_until(pilot, lambda: len(app.store.places) == 6)
         assert isinstance(app.screen, WelcomeScreen)
         # The welcome card is a centered modal; nothing of the tour is on the
-        # dashboard yet and no pointer is shown.
+        # dashboard yet and nothing is dimmed.
         assert not app.screen_stack[0].query(TourCard)
-        assert painted_pointer(app.screen_stack[0]) is None
+        assert not any(_dim_state(app).values())
         await pilot.press("enter")
         assert await _wait_until(pilot, lambda: bool(app.screen_stack[0].query(TourCard)))
         await pilot.pause()
@@ -139,20 +188,50 @@ async def test_welcome_card_then_step_card_inside_the_table_row(size: tuple[int,
         assert isinstance(app.focused, DeviceTable)
         regions = _regions(app)
         card_region = regions["tour-card"]
-        row = regions["main-row"]
-        assert card_region[1] >= row[1] and card_region[1] + card_region[3] <= row[1] + row[3]
-        assert card_region[0] + card_region[2] <= row[0] + row[2]
         for other in ("Header", "status-bar", "activity-log", "Footer"):
             assert not _overlaps(card_region, regions[other]), other
         assert regions["Footer"][1] == size[1] - 1
         assert _title(app) == "TOUR 1/8"
         assert card.current_text.startswith("Every bench")
         assert "j/k" in card.current_text
-        pointer = app.screen_stack[0].query_one(TourPointer)
-        assert pointer.can_focus is False
-        assert_points_at(app.screen_stack[0], _table_target(app), size)
-        # Never under the step card: the two are chrome for the same step.
-        assert not _overlaps(regions["tour-card"], tuple(painted_pointer(app.screen_stack[0])))
+        _assert_spotlight(app, "main-row")
+        _assert_card_anchored(app, _table_target(app), size)
+
+
+@pytest.mark.parametrize("size", [(80, 24), (60, 20), (200, 50)])
+async def test_every_step_spotlights_one_widget_and_anchors_the_card(
+    size: tuple[int, int],
+) -> None:
+    app = TourApp()
+    async with app.run_test(size=size) as pilot:
+        await _ready(app, pilot)
+        for index, bright in enumerate(BRIGHT_PER_STEP):
+            assert _title(app) == f"TOUR {index + 1}/{STEP_COUNT}"
+            _assert_spotlight(app, bright)
+            _assert_card_anchored(app, _anchor(app, bright), size)
+            await pilot.press("n")
+            await pilot.pause()
+            await pilot.pause()
+        assert _title(app) == "TOUR done"
+        # The tour is no longer about any one widget, so the whole app is
+        # bright again and the card floats free of it.
+        _assert_spotlight(app, None)
+        card = _card_region(app)
+        assert card.right <= size[0] and card.bottom <= size[1]
+
+
+async def test_moving_the_cursor_keeps_the_table_bright() -> None:
+    size = (120, 30)
+    app = TourApp()
+    async with app.run_test(size=size) as pilot:
+        await _ready(app, pilot)
+        before = _dim_state(app)
+        await pilot.press("j")
+        await pilot.pause()
+        await pilot.pause()
+        assert _title(app) == "TOUR 2/8"
+        assert _dim_state(app) == before
+        _assert_card_anchored(app, _table_target(app), size)
 
 
 async def test_welcome_n_starts_and_q_quits() -> None:
@@ -183,14 +262,14 @@ async def test_n_skips_one_step_at_a_time_and_the_done_card_stays() -> None:
         await pilot.pause()
         assert _title(app) == "TOUR done"
         assert _card(app).current_text.startswith("End of the tour.")
-        assert painted_pointer(app.screen_stack[0]) is None
+        assert not any(_dim_state(app).values())
         await pilot.press("n")  # nothing left to skip; the card stays until q
         await pilot.pause()
         assert app.screen_stack[0].query(TourCard)
         assert app.screen_stack[0].query_one(Footer)
 
 
-async def test_guidance_is_mirrored_inside_modals_with_a_pointer() -> None:
+async def test_guidance_is_mirrored_inside_modals_as_a_plain_line() -> None:
     app = TourApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await _ready(app, pilot)
@@ -205,23 +284,20 @@ async def test_guidance_is_mirrored_inside_modals_with_a_pointer() -> None:
         line = overlay.query_one("#overlay-hint-tour", Static)
         assert not line.has_class("hidden")
         assert str(line.render()).startswith("TOUR 3/8: c lists")
-        # No inline glyph anywhere: the tab titles are untouched and the
-        # pointer sits next to the active tab, on the overlay's own layer.
+        # Nothing of the tour is drawn over the modal: no card, no dimming.
+        assert not overlay.query(TourCard)
+        assert not [w for w in overlay.children if w.has_class(DIM_CLASS)]
+        # No inline glyph anywhere: the tab titles are untouched.
         tabs = overlay.query_one(TabbedContent)
         categories = list(overlay._by_category)
         labels = [tabs.get_tab(f"tab-{_slug(c)}").label_text for c in categories]
         assert labels == categories
-        first = tabs.get_tab(f"tab-{_slug(categories[0])}").region
-        assert_points_at(overlay, first, (120, 40))
-        await pilot.press("right")
-        await pilot.pause()
-        await pilot.pause()
-        second = tabs.get_tab(f"tab-{_slug(categories[1])}").region
-        assert_points_at(overlay, second, (120, 40))
         painted = app.export_screenshot()
         assert "TOUR" in painted and "3/8" in painted
         await pilot.press("escape")
         await pilot.pause()
+        # Back on the dashboard the spotlight is the current step's again.
+        _assert_spotlight(app, "main-row")
         await pilot.press("n")  # to step 4: the detail step
         await pilot.pause()
         await pilot.press("enter")
@@ -230,14 +306,14 @@ async def test_guidance_is_mirrored_inside_modals_with_a_pointer() -> None:
         assert isinstance(detail, DetailOverlay)
         assert not detail.query_one("#detail-hint-tour").has_class("hidden")
         title = detail.query_one("#detail-title", Static)
-        text = str(title.render())
-        assert text.startswith("Device:")
-        assert_points_at(detail, _centered_text(title.region, len(text)), (120, 40))
+        assert str(title.render()).startswith("Device:")
+        assert not detail.query(TourCard)
         await pilot.press("escape")
         await pilot.pause()
         await pilot.pause()
         assert _title(app) == "TOUR 5/8"
-        assert_points_at(app.screen_stack[0], _log_target(app), (120, 40))
+        _assert_spotlight(app, "activity-log")
+        _assert_card_anchored(app, _log_target(app), (120, 40))
 
 
 async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
@@ -248,24 +324,25 @@ async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
             await pilot.press("n")
             await pilot.pause()
         assert _title(app) == f"TOUR {STEP_COUNT}/{STEP_COUNT}"
-        assert_points_at(app.screen_stack[0], _status_target(app), (120, 30))
+        _assert_spotlight(app, "status-bar")
+        _assert_card_anchored(app, _status_target(app), (120, 30))
         await pilot.press("P")
         await pilot.pause()
         selector = app.screen
         assert isinstance(selector, CoordinatorSelector)
         assert not selector.query_one("#coord-hint-tour").has_class("hidden")
-        # The rows carry no glyph; the pointer sits next to the "desk" row.
+        # The rows carry no glyph and no card is stacked on the modal.
         items = list(selector.query_one("#coord-list", ListView).query(ListItem))
         names = [e.name for e in selector._entries]
         desk = items[names.index("desk")].query_one(Label)
         assert str(desk.render()).startswith("desk")
-        assert_points_at(selector, desk.region, (120, 30))
+        assert not selector.query(TourCard)
         await pilot.press("n")
         await pilot.pause()
         assert _title(app) == "TOUR done"
         await pilot.press("escape")
         await pilot.pause()
-        assert painted_pointer(app.screen_stack[0]) is None
+        assert not any(_dim_state(app).values())
 
 
 async def test_full_story_by_keyboard_alone() -> None:

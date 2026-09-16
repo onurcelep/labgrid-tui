@@ -13,7 +13,8 @@ WELCOME_LINES = (
     "It only reads the coordinator: see the whole lab at once, learn the CLI "
     "by using it, change nothing by accident.",
     "This tour runs on fake data. Keys work as usual; a card names the next "
-    "key and an arrow points at what it means. n skips, q quits. Enter starts.",
+    "key and the rest of the screen dims around what it means. n skips, "
+    "q quits. Enter starts.",
 )
 
 

@@ -48,7 +48,6 @@ def test_title_is_one_based_and_label_names_the_key_without_preamble() -> None:
     assert not controller.label().startswith("Look at")
     assert "j/k" in controller.label()
     assert controller.dashboard_target() == "table"
-    assert controller.modal_target() is None
 
 
 def test_no_step_text_opens_with_look_at() -> None:

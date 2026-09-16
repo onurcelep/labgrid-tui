@@ -10,18 +10,15 @@ it stays part of the reusable surface documented in the README's
 import contextlib
 from dataclasses import dataclass
 
-from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.css.query import NoMatches
-from textual.geometry import Region
 from textual.screen import ModalScreen
 from textual.widgets import Label, ListItem, ListView, Static
 
 from labgrid_tui.coordinators import CoordinatorEntry
 from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
-from labgrid_tui.ui.widgets.tour_pointer import TourPointer, update_pointer
 
 
 @dataclass(frozen=True)
@@ -127,22 +124,10 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
                 "enter=switch | n=new | e=edit | x=delete | esc/q=close",
                 id="coord-hint",
             )
-        # A screen child, not part of the modal body: the pointer is placed
-        # by screen coordinates on its own layer.
-        yield TourPointer()
 
     def on_mount(self) -> None:
         self.query_one("#coord-list", ListView).focus()
         self.update_guidance(self._guidance)
-        # Regions are not valid yet during on_mount.
-        self.call_after_refresh(self.refresh_pointer)
-
-    def on_resize(self, _event: events.Resize) -> None:
-        self.call_after_refresh(self.refresh_pointer)
-
-    def on_list_view_highlighted(self, _event: ListView.Highlighted) -> None:
-        # The list scrolls under a long registry; the target row moves with it.
-        self.call_after_refresh(self.refresh_pointer)
 
     def _selected_name(self) -> str | None:
         lv = self.query_one("#coord-list", ListView)
@@ -179,7 +164,7 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         self.dismiss(None)
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the pointer."""
+        """Tour sideband: refresh the guidance line."""
         self._guidance = guidance
         try:
             line = self.query_one("#coord-hint-tour", Static)
@@ -191,31 +176,6 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         # it, so a small terminal keeps its rows for the content.
         with contextlib.suppress(NoMatches):
             self.query_one("#coord-hint", Static).set_class(guidance is not None, "hidden")
-        self.refresh_pointer()
-
-    def refresh_pointer(self) -> None:
-        update_pointer(self, self._pointer_region())
-
-    def _pointer_region(self) -> Region | None:
-        """The row of the entry the guidance names."""
-        target = None if self._guidance is None else self._guidance.target
-        if target is None:
-            return None
-        index = next((i for i, e in enumerate(self._entries) if e.name == target), None)
-        if index is None:
-            return None
-        try:
-            items = list(self.query_one("#coord-list", ListView).query(ListItem))
-        except NoMatches:
-            return None
-        if index >= len(items):
-            return None
-        # The row's Label, not the ListItem: an item is as wide as the list,
-        # which would leave the pointer no free side and push it onto the
-        # neighboring row, reading as if that one were the target.
-        labels = items[index].query(Label)
-        region = labels.first().region if labels else items[index].region
-        return region if region.area else None
 
     def _row_text(self, entry: CoordinatorEntry) -> str:
         current = " *" if entry.name == self._current else ""
