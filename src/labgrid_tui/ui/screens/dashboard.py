@@ -10,6 +10,7 @@ from textual.containers import Horizontal
 from textual.css.query import NoMatches
 from textual.geometry import Region, Size
 from textual.screen import Screen
+from textual.widget import Widget
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
 import labgrid_tui
@@ -28,10 +29,12 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import evaluate_pack
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.guidance import (
+    DIM_CLASS,
     GUIDANCE_CSS,
     POINT_LOG,
     POINT_STATUS,
     POINT_TABLE,
+    SPOTLIGHT_CSS,
     TourGuidance,
 )
 from labgrid_tui.ui.layout import MIN_HEIGHT, MIN_WIDTH, is_narrow, too_small
@@ -61,7 +64,12 @@ from labgrid_tui.ui.widgets.status_bar import (
     Segment,
     StatusBar,
 )
-from labgrid_tui.ui.widgets.tour_pointer import TourPointer, update_pointer
+from labgrid_tui.ui.widgets.tour_card import (
+    TourCard,
+    card_width,
+    centered_offset,
+    choose_card_placement,
+)
 
 if TYPE_CHECKING:
     # Only for the cast in _persist_coordinators below: importing
@@ -84,11 +92,21 @@ TourHook = Callable[[str, str], None]
 # () -> the guidance the next pushed screen should show; None outside the tour.
 GuidanceProvider = Callable[[], TourGuidance | None]
 
+# The top-level widget each tour target names. The table step is about the
+# row under the cursor, but the widget that stays bright is the whole
+# table: dimming around a single row would strip the columns that give it
+# meaning.
+_TOUR_WIDGET = {
+    POINT_TABLE: "#main-row",
+    POINT_LOG: "#activity-log",
+    POINT_STATUS: "#status-bar",
+}
+
 
 class DashboardScreen(Screen[None]):
     DEFAULT_CSS = (
         """
-    /* The tour's pointer floats over everything on its own layer; every
+    /* The tour's step card floats over everything on its own layer; every
        other child stays where the vertical layout put it. */
     DashboardScreen { layout: vertical; layers: base tour; }
     /* Header docks top on its own; nothing else may dock to the same edge:
@@ -113,6 +131,7 @@ class DashboardScreen(Screen[None]):
     DashboardScreen.-narrow Header HeaderClock { display: none; }
     """
         + GUIDANCE_CSS
+        + SPOTLIGHT_CSS
     )
 
     # FilterBar is the first focusable widget in compose order; without this,
@@ -157,9 +176,10 @@ class DashboardScreen(Screen[None]):
         # anything about tour state.
         self._tour_hook = tour_hook
         self._guidance_provider = guidance_provider
-        # What the tour's pointer is currently aimed at, in this screen's
-        # own terms (POINT_TABLE / POINT_LOG / POINT_STATUS).
-        self._pointer_target: str | None = None
+        # What the current tour step is about, in this screen's own terms
+        # (POINT_TABLE / POINT_LOG / POINT_STATUS); None outside the tour
+        # and on the steps that are about nothing on this screen.
+        self._tour_target: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -267,33 +287,87 @@ class DashboardScreen(Screen[None]):
         self._update_too_small(event.size)
         self._update_footer_compact(event.size)
         # Regions are stale until the new layout has been applied.
-        self.call_after_refresh(self.refresh_pointer)
+        self.call_after_refresh(self.refresh_tour)
+
+    def on_screen_resume(self) -> None:
+        # A tour step can change while a modal is on top of this screen,
+        # and a screen that is not being refreshed never runs the deferred
+        # layout the step card's placement depends on.
+        self.call_after_refresh(self.refresh_tour)
 
     # ------------------------------------------------------------------
-    # Tour pointer
+    # Tour spotlight and step card
     # ------------------------------------------------------------------
 
-    def show_tour_pointer(self) -> TourPointer:
-        """Mount the tour's pointer; only the tour ever calls this."""
-        pointer = TourPointer()
-        self.mount(pointer)
-        self.call_after_refresh(self.refresh_pointer)
-        return pointer
+    def show_tour_card(self) -> TourCard:
+        """Mount the tour's step card; only the tour ever calls this."""
+        card = TourCard()
+        self.mount(card)
+        self.call_after_refresh(self.refresh_tour)
+        return card
 
-    def set_pointer_target(self, target: str | None) -> None:
-        self._pointer_target = target
-        self.refresh_pointer()
+    def set_tour_target(self, target: str | None) -> None:
+        self._tour_target = target
+        self.refresh_tour()
 
-    def refresh_pointer(self) -> None:
-        update_pointer(self, self._pointer_region())
+    def refresh_tour(self) -> None:
+        """Re-spotlight the step's widget and re-anchor the step card."""
+        self._apply_spotlight()
+        self._place_tour_card()
+        # The card is auto-height: a step whose text wraps to a different
+        # number of lines only settles into its height on the next layout
+        # pass, and where the card sits follows from that height.
+        self.call_after_refresh(self._place_tour_card)
 
-    def _pointer_region(self) -> Region | None:
-        """The current target as a screen region, or None when it is gone.
+    def _apply_spotlight(self) -> None:
+        bright = self._tour_widget()
+        for child in self.children:
+            # The card is the step's own chrome, not part of the app it
+            # talks about, so it keeps full colour on every step.
+            if isinstance(child, TourCard):
+                continue
+            child.set_class(bright is not None and child is not bright, DIM_CLASS)
 
-        A target can be absent for good reasons: the narrow layout hides the
-        activity log, and the too-small notice replaces the table.
+    def _tour_widget(self) -> Widget | None:
+        """The one top-level widget the current step is about.
+
+        A target can be absent for good reasons: the steps that are about
+        the tour itself name none, and the too-small notice replaces the
+        table with a widget no step ever points at.
         """
-        if self._pointer_target == POINT_TABLE:
+        selector = _TOUR_WIDGET.get(self._tour_target or "")
+        if selector is None:
+            return None
+        try:
+            return self.query_one(selector, Widget)
+        except NoMatches:
+            return None
+
+    def _place_tour_card(self) -> None:
+        cards = self.query(TourCard)
+        if not cards:
+            return
+        card = cards.first()
+        width = card_width(self.size)
+        if card.applied_width != width:
+            card.applied_width = width
+            card.styles.width = width
+            # The card's height follows from wrapping its text at the new
+            # width, which only the next layout pass knows.
+            self.call_after_refresh(self._place_tour_card)
+        size = card.outer_size
+        if not size.area:
+            return
+        region = self._tour_region()
+        if region is None:
+            offset = centered_offset(size, self.size)
+        else:
+            offset, _side = choose_card_placement(region, size, self.size)
+        card.styles.offset = (offset.x, offset.y)
+
+    def _tour_region(self) -> Region | None:
+        """The region the step card anchors to, or None when there is none."""
+        if self._tour_target == POINT_TABLE:
             try:
                 table = self.query_one(DeviceTable)
             except NoMatches:
@@ -304,17 +378,15 @@ class DashboardScreen(Screen[None]):
             if row is not None:
                 return row
             return table.region if table.region.area else None
-        if self._pointer_target == POINT_LOG:
+        if self._tour_target == POINT_LOG:
             try:
                 region = self.query_one(ActivityLog).region
             except NoMatches:
                 return None
-            # The panel's top line. Landing inside the log is fine here (any
-            # entry is "the log"), unlike the table, where the pointer has to
-            # single out one bench; anchoring on the whole panel instead would
-            # push the pointer up into the step card.
-            return Region(region.x, region.y, region.width, 1) if region.area else None
-        if self._pointer_target == POINT_STATUS:
+            # The whole panel: any entry is "the log", and a panel that
+            # reaches the footer leaves the card the space above it.
+            return region if region.area else None
+        if self._tour_target == POINT_STATUS:
             try:
                 bar = self.query_one(StatusBar)
             except NoMatches:
@@ -363,7 +435,7 @@ class DashboardScreen(Screen[None]):
         table.refresh_rows(store, capability_extra)
         self._refresh_status()
         # Rows may have re-sorted under the cursor.
-        self.refresh_pointer()
+        self.refresh_tour()
 
     def log_line(self, line: str) -> None:
         self.query_one(ActivityLog).log_line(line)
@@ -403,7 +475,7 @@ class DashboardScreen(Screen[None]):
         self._ui_state.show_activity = not self._ui_state.show_activity
         log.set_class(not self._ui_state.show_activity, "hidden")
         self._persist()
-        self.call_after_refresh(self.refresh_pointer)
+        self.call_after_refresh(self.refresh_tour)
 
     def action_toggle_help(self) -> None:
         if isinstance(self.app.screen, HelpOverlay):
@@ -589,8 +661,8 @@ class DashboardScreen(Screen[None]):
 
     def on_device_table_cursor_changed(self, message: DeviceTable.CursorChanged) -> None:
         # After refresh: the table may still have to scroll the new row into
-        # view, which moves the region the pointer is measured against.
-        self.call_after_refresh(self.refresh_pointer)
+        # view, which moves the region the card is anchored to.
+        self.call_after_refresh(self.refresh_tour)
         if self._tour_hook is not None:
             self._tour_hook("cursor_changed", message.place_name or "")
 

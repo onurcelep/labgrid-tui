@@ -70,9 +70,9 @@ DELAYED_ENTRY_CUES: dict[int, tuple[tuple[int, str], ...]] = {
     _STEP_ROBOT_PACK: ((1, CUE_MINE_ALLOCATED), (2, CUE_MINE_ACQUIRED)),
 }
 
-# Where the pointer sits while a step is active: on the dashboard (the
-# cursor row of the table, the activity log, the status bar) and inside the
-# modal the step opens, in that screen's own terms (see TourGuidance).
+# What each step is about on the dashboard: the cursor row of the table,
+# the activity log, the status bar. The dashboard keeps that widget bright
+# and dims the rest (see labgrid_tui.ui.guidance).
 DASHBOARD_TARGET: dict[int, str] = {
     _STEP_MOVE: POINT_TABLE,
     _STEP_ACQUIRE: POINT_TABLE,
@@ -82,13 +82,6 @@ DASHBOARD_TARGET: dict[int, str] = {
     _STEP_QUEUE: POINT_TABLE,
     _STEP_ROBOT_PACK: POINT_TABLE,
     _STEP_COORDINATORS: POINT_STATUS,
-}
-MODAL_TARGET: dict[int, str] = {
-    _STEP_COMMANDS_COPY: "*",
-    _STEP_DETAIL: "title",
-    _STEP_QUEUE: "Manage",
-    _STEP_ROBOT_PACK: "robot",
-    _STEP_COORDINATORS: "desk",
 }
 
 
@@ -121,9 +114,6 @@ class TourController:
 
     def dashboard_target(self) -> str | None:
         return None if self.done else DASHBOARD_TARGET.get(self.step)
-
-    def modal_target(self) -> str | None:
-        return None if self.done else MODAL_TARGET.get(self.step)
 
     def _advance(self) -> None:
         self.step += 1

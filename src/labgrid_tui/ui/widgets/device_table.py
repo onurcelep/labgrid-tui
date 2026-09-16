@@ -417,9 +417,8 @@ class DeviceTable(DataTable[str | Text]):
         """Screen region of the row under the cursor, clipped to what is visible.
 
         Stops at the end of the Name column rather than spanning the table:
-        a full-width anchor leaves no side free, and a pointer forced above
-        or below it would sit against a neighboring bench's row and appear
-        to single that one out instead.
+        the tour anchors its step card to this region, and a bench's name is
+        the part of its row that identifies it.
 
         DataTable exposes row geometry only in its own virtual coordinates
         (``_get_row_region``/``_get_cell_region``, verified against the

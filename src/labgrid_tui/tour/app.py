@@ -4,17 +4,15 @@ required.
 Reuses every seam LabgridTuiApp exposes for a downstream shell (FleetSource,
 ActionRunner, in-memory config/coordinators/packs/ui-state injection)
 instead of forking the dashboard: the tour is a thin subclass, not a
-parallel implementation. Its own chrome is a welcome card, a floating step
-card over the fleet table, the same step text inside any modal on top, and
-one pointer widget, on its own layer, next to whatever the step is about.
+parallel implementation. Its own chrome is a welcome card, a step card
+anchored to whatever the step is about, and the same step text inside any
+modal on top. The dashboard spotlights the step's widget by dimming the
+others, so nothing is ever drawn over the app itself.
 """
 
 import contextlib
-from collections.abc import Callable
 
-from textual import events
 from textual.binding import Binding
-from textual.containers import Horizontal
 from textual.css.query import NoMatches
 from textual.screen import Screen
 
@@ -32,9 +30,9 @@ from labgrid_tui.tour.welcome import WelcomeScreen
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.app import LabgridTuiApp
 from labgrid_tui.ui.guidance import TourGuidance
-from labgrid_tui.ui.screens.dashboard import DashboardScreen, TourHook
+from labgrid_tui.ui.screens.dashboard import DashboardScreen
 from labgrid_tui.ui.uistate import UiState
-from labgrid_tui.ui.widgets.tour_card import CARD_TOP, CARD_WIDTH, TourCard
+from labgrid_tui.ui.widgets.tour_card import TourCard
 
 SUB_TITLE = "TOUR (fake data)"
 LAB_ADDRESS = "tour:lab"
@@ -62,54 +60,6 @@ def _tour_coordinators() -> Coordinators:
             "desk": CoordinatorEntry(name="desk", address=DESK_ADDRESS),
         },
     )
-
-
-class TourDashboardScreen(DashboardScreen):
-    DEFAULT_CSS = """
-    /* The card lives on its own layer inside the table row: absolutely
-       positioned there, it floats over free table space and the table
-       keeps its full size. */
-    TourDashboardScreen #main-row { layers: base tour; }
-    TourDashboardScreen #main-row > DeviceTable { layer: base; }
-    """
-
-    def __init__(
-        self,
-        runner: ActionRunner,
-        ui_state: UiState,
-        persist: Callable[[], None],
-        tour_hook: TourHook,
-        controller: TourController,
-        guidance_provider: Callable[[], TourGuidance | None],
-    ) -> None:
-        super().__init__(
-            runner, ui_state, persist, tour_hook=tour_hook, guidance_provider=guidance_provider
-        )
-        self._controller = controller
-
-    def show_card(self) -> TourCard:
-        card = TourCard(self._controller)
-        self.query_one("#main-row", Horizontal).mount(card)
-        self.show_tour_pointer()
-        self.call_after_refresh(self.place_card)
-        return card
-
-    def place_card(self) -> None:
-        try:
-            card = self.query_one(TourCard)
-            row = self.query_one("#main-row", Horizontal)
-        except NoMatches:
-            return
-        width, height = row.content_size
-        x = max(0, width - CARD_WIDTH - 1)
-        # Below the fake benches when the table is tall enough; otherwise as
-        # low as still fits, so the card never runs past the table row.
-        y = max(0, min(CARD_TOP, height - card.outer_size.height))
-        card.styles.offset = (x, y)
-
-    def on_resize(self, event: events.Resize) -> None:
-        super().on_resize(event)
-        self.place_card()
 
 
 class TourApp(LabgridTuiApp):
@@ -157,29 +107,25 @@ class TourApp(LabgridTuiApp):
         )
 
     def get_default_screen(self) -> Screen[None]:
-        return TourDashboardScreen(
+        return DashboardScreen(
             self.runner,
             self._ui_state,
             self._persist_ui_state,
-            self._on_tour_hook,
-            self._controller,
-            self.guidance,
+            tour_hook=self._on_tour_hook,
+            guidance_provider=self.guidance,
         )
 
     @property
-    def dashboard(self) -> TourDashboardScreen:
+    def dashboard(self) -> DashboardScreen:
         screen = self.screen_stack[0]
-        assert isinstance(screen, TourDashboardScreen)
+        assert isinstance(screen, DashboardScreen)
         return screen
 
     def guidance(self) -> TourGuidance | None:
         """What a modal pushed right now should show; nothing before the tour starts."""
         if not self.started:
             return None
-        return TourGuidance(
-            text=f"{self._controller.title()}: {self._controller.label()}",
-            target=self._controller.modal_target(),
-        )
+        return TourGuidance(text=f"{self._controller.title()}: {self._controller.label()}")
 
     def on_mount(self) -> None:
         super().on_mount()
@@ -187,8 +133,7 @@ class TourApp(LabgridTuiApp):
 
     def _start_tour(self, _result: None) -> None:
         self.started = True
-        self.dashboard.show_card()
-        self.dashboard.set_pointer_target(self._controller.dashboard_target())
+        self._show_step(self.dashboard.show_tour_card())
 
     def _on_tour_hook(self, name: str, detail: str) -> None:
         if name == "cursor_changed":
@@ -200,12 +145,14 @@ class TourApp(LabgridTuiApp):
 
     def _on_step_changed(self, _label: str) -> None:
         with contextlib.suppress(NoMatches):
-            self.dashboard.query_one(TourCard).refresh_text()
-        self.dashboard.place_card()
-        self.dashboard.set_pointer_target(self._controller.dashboard_target())
+            self._show_step(self.dashboard.query_one(TourCard))
         update = getattr(self.screen, "update_guidance", None)
         if callable(update):
             update(self.guidance())
+
+    def _show_step(self, card: TourCard) -> None:
+        card.show(self._controller.title(), self._controller.label())
+        self.dashboard.set_tour_target(self._controller.dashboard_target())
 
     def _on_step_entered(self, step: int) -> None:
         for cue in ENTRY_CUES.get(step, ()):
