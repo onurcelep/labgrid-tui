@@ -372,11 +372,12 @@ class DashboardScreen(Screen[None]):
                 table = self.query_one(DeviceTable)
             except NoMatches:
                 return None
-            # The cursor row is what the step is about; the whole table is
-            # the fallback while the fleet is still empty.
-            row = table.cursor_row_region()
-            if row is not None:
-                return row
+            # The block of rendered rows, so the card lands under the last
+            # bench instead of over one; the whole table is the fallback
+            # while the fleet is still empty.
+            block = table.rows_block_region()
+            if block is not None:
+                return block
             return table.region if table.region.area else None
         if self._tour_target == POINT_LOG:
             try:
