@@ -62,7 +62,10 @@ jobs:
           # finishes with nothing posted, and the assertion step below turns
           # that into a red check. Only the pr subcommands are allowed, not
           # gh api: prefix matching cannot pin an api call to one endpoint.
-          claude_args: '--model opus --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*)"'
+          # The read helpers are allowed too: the reviewer reaches for them
+          # to inspect the diff, and every denied call costs it a turn from
+          # a budget it needs for the review itself.
+          claude_args: '--model opus --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(wc:*),Bash(cat:*),Bash(head:*),Bash(tail:*)"'
           # The Action does not load the repo's .claude/settings.json (it is
           # stripped from the runner's checkout), so plugins must be
           # self-loaded via these inputs rather than relying on settings.json.
