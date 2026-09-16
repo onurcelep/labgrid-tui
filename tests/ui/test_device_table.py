@@ -34,6 +34,8 @@ def _use_layout(table: DeviceTable, places: list[Place], width: int | None = Non
     """Point *table* at the layout of *places*, the way refresh_rows does."""
     table._tag_layout = tag_layout([place.tags for place in places])
     table._set_tag_render(width)
+    table._any_comment = any(place.comment for place in places)
+    table._name_width_bare = max((len(place.name) for place in places), default=0)
 
 
 def _store(*places: Place) -> FleetStore:
@@ -677,6 +679,52 @@ async def test_narrow_name_budget_drops_the_aliases_before_eliding_the_name() ->
         assert "(" not in elided
         assert len(elided) <= NAME_MAX_WIDTH_NARROW
         assert "…" in elided
+
+
+async def test_comment_column_appears_only_when_a_place_carries_one() -> None:
+    """A fleet with no comments anywhere has room for the column and still
+    does not get it: a labelled strip of blanks is not worth a column.
+    Width is not what decides this, so the check runs at 150 columns,
+    where every column fits several times over."""
+    places = [_place(f"bench-{i:02d}", tags={"board": "imx8"}) for i in range(9)]
+    store = _store(*places)
+    app = _Harness()
+    async with app.run_test(size=(150, 30)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        labels = _labels(table)
+        assert "Comment" not in labels, labels
+        # Everything else is there, so the drop was the rule, not pressure.
+        assert "Tags" in labels and "Changed" in labels and "User" in labels
+        assert table._tags_width is None
+        assert table._show_aliases
+
+        # One comment anywhere in the fleet brings the column back.
+        store.places["bench-04"] = _place("bench-04", comment="rack A", tags={"board": "imx8"})
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert "Comment" in _labels(table)
+        assert str(table.get_cell("bench-04", "comment")) == "rack A"
+        assert str(table.get_cell("bench-00", "comment")) == ""
+
+
+async def test_comment_visibility_follows_the_fleet_not_the_filter() -> None:
+    """Typing in the filter must not add or remove a column under the
+    reader, so the rule reads the whole fleet, not the visible rows."""
+    store = _store(_place("bench-01", comment="rack A"), _place("bench-02"))
+    app = _Harness()
+    async with app.run_test(size=(150, 30)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert "Comment" in _labels(table)
+
+        table.filter_query = "bench-02"  # the only visible row has no comment
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert table.row_count == 1
+        assert "Comment" in _labels(table)
 
 
 async def test_aliases_are_the_first_thing_width_pressure_takes() -> None:

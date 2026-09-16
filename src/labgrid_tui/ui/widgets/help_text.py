@@ -115,7 +115,7 @@ build. Add your own classes under `[capabilities]` in config.toml.
 | user | the user part of the place's acquired `host/user`, "-" if free |
 | tags | the place's set-tags pairs, as labgrid-client shows them |
 | changed | time since the place last changed state |
-| comment | place comment / description |
+| comment | place comment; the column appears when any place has one |
 
 Narrow terminals drop columns lowest-priority first (comment, tags,
 changed, then user) to keep m/name/s/resources visible. Tags are cut

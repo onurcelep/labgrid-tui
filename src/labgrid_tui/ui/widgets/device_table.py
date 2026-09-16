@@ -177,6 +177,9 @@ class DeviceTable(DataTable[str | Text]):
         # column-priority pass, for the same reason the Tags cut is.
         self._show_aliases = True
         self._name_width_bare = 0
+        # Whether any place in the fleet carries a comment at all; the
+        # Comment column is not built when none does.
+        self._any_comment = False
         self._column_keys: tuple[str, ...] = ()
         # Diff cache for cell-level updates: place name -> per-column
         # fingerprints, in the same order as _column_keys. Ordered list of
@@ -239,6 +242,13 @@ class DeviceTable(DataTable[str | Text]):
         content_width["tags"] = max(content_width["tags"], self._tag_layout.total_width)
 
         shown = {key for _label, key in _ALL_COLUMNS}
+        if not self._any_comment:
+            # A labelled strip of blanks says nothing about the fleet, and
+            # labgrid-client's own places listing prints the comment only
+            # where there is one. Measured over the whole fleet, not the
+            # filtered rows, so typing in the filter cannot make the column
+            # appear and disappear under the reader.
+            shown.discard("comment")
 
         def total_width() -> int:
             return sum(content_width[key] + _CELL_PADDING for key in shown)
@@ -319,6 +329,7 @@ class DeviceTable(DataTable[str | Text]):
         # like any other cell change and re-measures the column with it.
         self._tag_layout = tag_layout(place.tags for place in store.places.values())
         self._set_tag_render(self._tags_width)
+        self._any_comment = any(place.comment for place in store.places.values())
         # (place, resources) pairs: resources_of is O(places x resources)
         # per call, so it is computed once here per refresh and threaded
         # through instead of every consumer below re-deriving it.
