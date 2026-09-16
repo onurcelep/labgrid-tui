@@ -57,11 +57,12 @@ jobs:
           # auto PR review; it runs once per PR and depth matters. The floating
           # 'opus' alias (vs a dated pin) is deliberate: the review should track
           # the newest Opus; pin a dated ID only if a regression bites.
-          # The reviewer posts its findings with gh (PR review and comment
-          # endpoints) and reads the PR with gh; without an explicit allowlist
-          # the Action denies those calls, the review finishes with nothing
-          # posted, and the assertion step below turns that into a red check.
-          claude_args: '--model opus --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh api:*)"'
+          # The reviewer reads the PR and posts its findings with gh; without
+          # an explicit allowlist the Action denies those calls, the review
+          # finishes with nothing posted, and the assertion step below turns
+          # that into a red check. Only the pr subcommands are allowed, not
+          # gh api: prefix matching cannot pin an api call to one endpoint.
+          claude_args: '--model opus --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr review:*)"'
           # The Action does not load the repo's .claude/settings.json (it is
           # stripped from the runner's checkout), so plugins must be
           # self-loaded via these inputs rather than relying on settings.json.
