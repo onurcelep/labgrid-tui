@@ -24,6 +24,7 @@ from labgrid_tui.tour.fleet import (
     CUE_SERIAL_OFFLINE,
     CUE_SERIAL_ONLINE,
 )
+from labgrid_tui.ui.guidance import POINT_LOG, POINT_STATUS, POINT_TABLE
 
 STEP_TEXT: tuple[str, ...] = (
     "Every bench, its status dot, who holds it, what it offers. j/k moves.",
@@ -72,11 +73,7 @@ DELAYED_ENTRY_CUES: dict[int, tuple[tuple[int, str], ...]] = {
 # Where the pointer sits while a step is active: on the dashboard (the
 # cursor row of the table, the activity log, the status bar) and inside the
 # modal the step opens, in that screen's own terms (see TourGuidance).
-POINT_TABLE = "table"
-POINT_LOG = "log"
-POINT_STATUS = "status"
-
-DASHBOARD_MARKER: dict[int, str] = {
+DASHBOARD_TARGET: dict[int, str] = {
     _STEP_MOVE: POINT_TABLE,
     _STEP_ACQUIRE: POINT_TABLE,
     _STEP_COMMANDS_COPY: POINT_TABLE,
@@ -122,8 +119,8 @@ class TourController:
             return DONE_TITLE
         return f"TOUR {self.step + 1}/{STEP_COUNT}"
 
-    def dashboard_marker(self) -> str | None:
-        return None if self.done else DASHBOARD_MARKER.get(self.step)
+    def dashboard_target(self) -> str | None:
+        return None if self.done else DASHBOARD_TARGET.get(self.step)
 
     def modal_target(self) -> str | None:
         return None if self.done else MODAL_TARGET.get(self.step)

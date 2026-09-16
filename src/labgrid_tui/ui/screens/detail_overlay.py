@@ -15,6 +15,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
+from textual.geometry import Region
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -24,9 +25,10 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_osc52, copy_via_suspend
 from labgrid_tui.ui.format import abbrev
-from labgrid_tui.ui.guidance import GUIDANCE_CSS, MARKER, TourGuidance
+from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
 from labgrid_tui.ui.layout import is_narrow
 from labgrid_tui.ui.store import FleetStore
+from labgrid_tui.ui.widgets.tour_pointer import TourPointer, update_pointer
 
 
 def _format_timestamp(epoch: float) -> str:
@@ -37,7 +39,7 @@ def _format_timestamp(epoch: float) -> str:
 class DetailOverlay(ModalScreen[None]):
     DEFAULT_CSS = (
         """
-    DetailOverlay { align: center middle; }
+    DetailOverlay { align: center middle; layers: base tour; }
     #detail-modal {
         width: 95%;
         max-width: 100;
@@ -97,6 +99,9 @@ class DetailOverlay(ModalScreen[None]):
         self.place_name = place_name
         self._runner = runner
         self._plain_text = ""
+        # Plain-text mirror of the title line: Static keeps its content as a
+        # Visual, and the pointer needs the text's width to sit beside it.
+        self._title_text = ""
 
     def compose(self) -> ComposeResult:
         # Plain Vertical, not VerticalScroll: a focusable outer box would
@@ -113,17 +118,23 @@ class DetailOverlay(ModalScreen[None]):
                 "enter/y = copy | shift+enter = copy via select | c = commands | esc = close",
                 id="detail-hint",
             )
+        # A screen child, not part of the modal body: the pointer is placed
+        # by screen coordinates on its own layer.
+        yield TourPointer()
 
     def on_mount(self) -> None:
         self.refresh_fleet()
         self.update_guidance(self._guidance)
         self.set_focus(self.query_one("#detail-scroll", VerticalScroll))
+        # Regions are not valid yet during on_mount.
+        self.call_after_refresh(self.refresh_pointer)
 
     def on_resize(self, _event: events.Resize) -> None:
         # -narrow changes how resource lines are laid out (see
         # refresh_fleet); re-render existing content on resize rather than
         # waiting for the next fleet event to pick it up.
         self.refresh_fleet()
+        self.call_after_refresh(self.refresh_pointer)
 
     def _scroll_body(self) -> VerticalScroll:
         return self.query_one("#detail-scroll", VerticalScroll)
@@ -167,12 +178,14 @@ class DetailOverlay(ModalScreen[None]):
 
         place = store.places.get(self.place_name)
         if place is None:
-            title.update(f"{self._title_prefix()}Device: {self.place_name} (removed)")
+            self._title_text = f"Device: {self.place_name} (removed)"
+            title.update(self._title_text)
             body.update("this place no longer exists on the coordinator")
             self._plain_text = f"{self.place_name}: removed"
             return
 
-        title.update(f"{self._title_prefix()}Device: {place.name}")
+        self._title_text = f"Device: {place.name}"
+        title.update(self._title_text)
         text = Text()
         plain: list[str] = [f"Device: {place.name}"]
 
@@ -339,7 +352,7 @@ class DetailOverlay(ModalScreen[None]):
         )
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line and the pointed title."""
+        """Tour sideband: refresh the guidance line and the pointer."""
         self._guidance = guidance
         try:
             line = self.query_one("#detail-hint-tour", Static)
@@ -352,7 +365,23 @@ class DetailOverlay(ModalScreen[None]):
         with contextlib.suppress(NoMatches):
             self.query_one("#detail-hint", Static).set_class(guidance is not None, "hidden")
         self.refresh_fleet()
+        self.refresh_pointer()
 
-    def _title_prefix(self) -> str:
-        pointed = self._guidance is not None and self._guidance.target == "title"
-        return f"{MARKER} " if pointed else ""
+    def refresh_pointer(self) -> None:
+        update_pointer(self, self._pointer_region())
+
+    def _pointer_region(self) -> Region | None:
+        """The modal's title line, the only thing a step points at here."""
+        target = None if self._guidance is None else self._guidance.target
+        if target != "title":
+            return None
+        try:
+            region = self.query_one("#detail-title", Static).region
+        except NoMatches:
+            return None
+        if not region.area:
+            return None
+        # The centered title text, not its full-width box: a box that wide
+        # leaves the pointer no free side and drops it into the body.
+        width = min(len(self._title_text), region.width) or region.width
+        return Region(region.x + (region.width - width) // 2, region.y, width, 1)
