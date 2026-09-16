@@ -65,6 +65,10 @@ def test_help_text_lists_the_detail_fields_in_labgrid_order() -> None:
         "acquired resources, allowed, created, changed, reservation"
     )
     assert order in prose
+    # State is this app's own reading, not one of show()'s fields, so the
+    # legend has to place it outside that list.
+    assert "State first" in prose
+    assert prose.index("State first") < prose.index(order)
 
 
 def test_help_text_covers_operations_prose() -> None:

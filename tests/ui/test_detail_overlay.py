@@ -100,6 +100,7 @@ async def test_detail_fields_follow_labgrid_place_show_order(
         overlay = await _open_detail(app, pilot, "tb-1")
         body = str(overlay.query_one("#detail-body", Static).render())
         expected = [
+            "State:",
             "Aliases:",
             "Comment:",
             "Tags:",
@@ -136,6 +137,68 @@ async def test_detail_always_prints_acquired_created_and_changed(
         assert "Changed:      -" in body
         for omitted in ("Aliases:", "Comment:", "Tags:", "Matches:", "Allowed:", "Reservation:"):
             assert omitted not in body, omitted
+
+
+async def test_state_reads_the_same_four_ways_as_the_status_dot(
+    fake_coordinator: tuple[FakeCoordinator, str],
+) -> None:
+    """State is the TUI's own summary, not a labgrid field: it must agree
+    with the S dot, held before queued before nothing usable to hold."""
+    from labgrid_tui.coordinator.models import Place, Resource
+    from labgrid_tui.ui.screens.detail_overlay import _place_state
+
+    def _place(**kwargs: object) -> Place:
+        base: dict[str, object] = {
+            "name": "tb-1",
+            "aliases": (),
+            "comment": "",
+            "tags": {},
+            "matches": (),
+            "acquired": None,
+            "acquired_resources": (),
+            "allowed": (),
+            "created": 0.0,
+            "changed": 0.0,
+            "reservation": None,
+        }
+        return Place(**{**base, **kwargs})  # type: ignore[arg-type]
+
+    def _res(avail: bool) -> Resource:
+        return Resource(
+            exporter="exp1",
+            group="g1",
+            name="serial",
+            cls="NetworkSerialPort",
+            params={},
+            extra={},
+            acquired="",
+            avail=avail,
+        )
+
+    online = [_res(True)]
+    assert _place_state(_place(), online) == "Free"
+    assert _place_state(_place(reservation="TOK"), online) == "Reserved"
+    assert _place_state(_place(acquired="host/alice"), online) == "Acquired"
+    # Held and queued at once still reads as held, as the dot does.
+    assert _place_state(_place(acquired="host/alice", reservation="TOK"), online) == "Acquired"
+    # Nothing usable exported: every match down, or no match at all.
+    assert _place_state(_place(), [_res(False)]) == "Offline"
+    assert _place_state(_place(), []) == "Offline"
+
+
+async def test_state_is_the_first_line_of_the_body(
+    fake_coordinator: tuple[FakeCoordinator, str],
+) -> None:
+    servicer, address = fake_coordinator
+    place = pb2.Place(name="tb-1", acquired="host/alice")
+    place.matches.add(exporter="exp1", group="g1", cls="*")
+    servicer.places.append(place)
+    servicer.resources.append(_serial())
+    app = LabgridTuiApp(_config(address))
+    async with app.run_test() as pilot:
+        overlay = await _open_detail(app, pilot, "tb-1")
+        body = str(overlay.query_one("#detail-body", Static).render())
+        assert body.splitlines()[0] == "  State:        Acquired"
 
 
 def test_format_match_reads_like_labgrid_writes_it() -> None:
