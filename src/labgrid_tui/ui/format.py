@@ -136,7 +136,10 @@ def fit_layout(layout: TagLayout, width: int) -> TagLayout:
     """
     slots = list(layout.slots)
     while len(slots) > 1 and TagLayout(tuple(slots)).total_width > width:
-        constant = [i for i, slot in enumerate(slots) if slot.constant]
+        # Index 0 is out of reach in both phases: the widest-covered key
+        # can itself be a constant one, and dropping it would empty the
+        # cell of every place whose only pairs are constant.
+        constant = [i for i, slot in enumerate(slots) if slot.constant and i > 0]
         slots.pop(constant[-1] if constant else len(slots) - 1)
     return TagLayout(tuple(slots))
 
