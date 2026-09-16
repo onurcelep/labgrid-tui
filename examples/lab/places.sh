@@ -27,6 +27,12 @@ bench-04:imx8:dev:lab2
 bench-05:rpi4:staging:lab2
 bench-06:rpi4:staging:lab2"
 
+# Second names for the two benches people ask for by role. labgrid-client
+# takes an alias anywhere it takes a place name, and the table prints it
+# beside the name.
+ALIASES="bench-01:smoke
+bench-03:bringup"
+
 lg() {
     labgrid-client -x "$COORDINATOR" "$@"
 }
@@ -42,6 +48,11 @@ up() {
         echo "$known" | grep -qx "$name" || lg -p "$name" create
         lg -p "$name" add-match "$EXPORTER/$name/*"
         lg -p "$name" set-tags "board=$board" "env=$env" "site=$site"
+    done
+    # add-alias rejects an alias the place already has, which is the one
+    # thing here a rerun would otherwise fail on.
+    echo "$ALIASES" | while IFS=: read -r name alias; do
+        lg -p "$name" add-alias "$alias" || true
     done
 }
 

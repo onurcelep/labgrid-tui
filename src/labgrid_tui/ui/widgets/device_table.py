@@ -8,6 +8,7 @@ same column on every row.
 
 import time
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import events
 from textual.binding import Binding
@@ -171,6 +172,11 @@ class DeviceTable(DataTable[str | Text]):
         # if every one of them renders the same slots at the same widths.
         self._tag_layout = TagLayout()
         self._render_layout = TagLayout()
+        # Whether the Name cells carry their place's aliases, and the width
+        # those cells need without them. Both are settled by the same
+        # column-priority pass, for the same reason the Tags cut is.
+        self._show_aliases = True
+        self._name_width_bare = 0
         self._column_keys: tuple[str, ...] = ()
         # Diff cache for cell-level updates: place name -> per-column
         # fingerprints, in the same order as _column_keys. Ordered list of
@@ -206,19 +212,26 @@ class DeviceTable(DataTable[str | Text]):
         rows: list[dict[str, str | Text]],
         available_width: int,
     ) -> tuple[str, ...]:
-        """Which columns fit, and how wide the Tags cells may render.
+        """Which columns fit, whether the names keep their aliases, and how
+        wide the Tags cells may render.
 
-        Sets ``_tags_width`` and ``_render_layout`` as side effects: Tags is
-        the one column that gives up width before anything gives up its
-        place, so a heavily tagged fleet costs its own cells a cut, not the
-        table a column.
+        Sets ``_show_aliases``, ``_tags_width`` and ``_render_layout`` as
+        side effects. Under pressure the aliases go first: they are a second
+        name for a place the row already names, so they cost less than a tag
+        pair or a whole column. Tags then give up width before anything
+        gives up its place, so a heavily tagged fleet costs its own cells a
+        cut, not the table a column.
+
+        Cells are measured in terminal cells, not characters: a status dot
+        is one character and two cells wide, and estimating it at one would
+        leave the table overflowing its own width by a column per emoji.
         """
         content_width = {key: len(label) for label, key in _ALL_COLUMNS}
         for row in rows:
             for key, cell in row.items():
                 text = cell.plain if isinstance(cell, Text) else cell
-                if len(text) > content_width[key]:
-                    content_width[key] = len(text)
+                if cell_len(text) > content_width[key]:
+                    content_width[key] = cell_len(text)
 
         # Tags measures against the layout, not against the widest row:
         # every row reserves every slot, so a row whose last key is missing
@@ -231,9 +244,15 @@ class DeviceTable(DataTable[str | Text]):
             return sum(content_width[key] + _CELL_PADDING for key in shown)
 
         tags_width: int | None = None
+        show_aliases = True
         natural_tags = content_width["tags"]
         if available_width > 0:
-            # Shrink Tags first, so a wide tag set costs its own cells a
+            # The rows were rendered with the aliases on, so this is the
+            # pass that finds out whether they fit at all.
+            if total_width() > available_width:
+                show_aliases = False
+                content_width["name"] = max(len("Name"), self._name_width_bare)
+            # Shrink Tags next, so a wide tag set costs its own cells a
             # cut rather than the table a whole column...
             excess = total_width() - available_width
             if excess > 0:
@@ -249,6 +268,7 @@ class DeviceTable(DataTable[str | Text]):
                 content_width["tags"] = min(natural_tags, content_width["tags"] + slack)
             if content_width["tags"] < natural_tags:
                 tags_width = content_width["tags"]
+        self._show_aliases = show_aliases
         self._set_tag_render(tags_width)
         return tuple(key for _label, key in _ALL_COLUMNS if key in shown)
 
@@ -306,6 +326,14 @@ class DeviceTable(DataTable[str | Text]):
 
         if not stale:
             self.marks &= set(store.places)
+            # Measure the Name column at its widest, aliases included, and
+            # record what it would need without them; _visible_columns
+            # decides between the two.
+            self._show_aliases = True
+            self._name_width_bare = max(
+                (len(self._name_plain(place, aliases=False)) for place, _r in visible),
+                default=0,
+            )
             rows = [
                 self._cell_values(place, resources, capability_extra, now)
                 for place, resources in visible
@@ -447,7 +475,7 @@ class DeviceTable(DataTable[str | Text]):
 
         values: dict[str, str | Text] = {
             "m": self._mark_cell(place.name),
-            "name": dimmed(self._display_name(place.name)),
+            "name": dimmed(self._display_name(place)),
             "s": dot,
             "capabilities": capability_chips(online, offline, unknown=unknown),
             "user": dimmed(user),
@@ -519,13 +547,34 @@ class DeviceTable(DataTable[str | Text]):
         visible = block.intersection(content)
         return visible if visible.area else None
 
-    def _display_name(self, name: str) -> str:
-        # Capped only in -narrow: place names commonly share a long
-        # prefix, so the tail, where they diverge, is what must
-        # survive truncation, not the head.
-        if is_narrow(self.app.size):
+    def _name_plain(self, place: Place, *, aliases: bool) -> str:
+        """The Name cell's text: ``name (alias alias)``, as
+        ``labgrid-client places`` prints it.
+
+        The aliases are the only part of this cell width pressure may take:
+        the name is what sorts the fleet, keys the row and goes into every
+        command line, so both budgets here (the -narrow cap and the
+        column-priority pass) drop the aliases whole before the name is
+        elided at all.
+        """
+        name = place.name
+        suffix = f" ({' '.join(place.aliases)})" if aliases and place.aliases else ""
+        if is_narrow(self.app.size) and len(name) + len(suffix) > NAME_MAX_WIDTH_NARROW:
+            # Place names commonly share a long prefix, so the tail, where
+            # they diverge, is what must survive truncation.
             return middle_ellipsis(name, NAME_MAX_WIDTH_NARROW)
-        return name
+        return name + suffix
+
+    def _display_name(self, place: Place) -> str | Text:
+        plain = self._name_plain(place, aliases=self._show_aliases)
+        if plain == place.name:
+            return plain
+        suffix = plain.removeprefix(place.name)
+        if not suffix:
+            return plain  # the name itself was elided; nothing to dim
+        text = Text(place.name)
+        text.append(suffix, style="dim")
+        return text
 
     def _rerender(self) -> None:
         if self._cache is not None:

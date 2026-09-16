@@ -42,6 +42,13 @@ _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
     ("bench-06", "rpi4", "staging", "lab2", "Spare, no resources wired up yet"),
 )
 
+# A couple of add-alias names, so the tour shows the "name (alias)" form
+# the table and labgrid-client's places listing both use.
+_BENCH_ALIASES: dict[str, tuple[str, ...]] = {
+    "bench-01": ("smoke",),
+    "bench-03": ("bringup",),
+}
+
 # bench-04 is reserved by alice for the whole tour (a black dot from the
 # start). My own reservation appears only when the tour has the user queue
 # for alice's bench-03; it is allocated when alice lets go, and the bench
@@ -65,12 +72,13 @@ def _place(
     *,
     tags: dict[str, str],
     comment: str,
+    aliases: tuple[str, ...] = (),
     acquired: str | None = None,
     reservation: str | None = None,
 ) -> Place:
     return Place(
         name=name,
-        aliases=(),
+        aliases=aliases,
         comment=comment,
         tags=tags,
         matches=(ResourceMatchPattern(exporter=EXPORTER, group=name, cls="*"),),
@@ -115,6 +123,7 @@ def _bench_place(name: str) -> Place:
         name,
         tags={"board": board, "env": env, "site": site},
         comment=comment,
+        aliases=_BENCH_ALIASES.get(name, ()),
         reservation=reservation,
     )
 
