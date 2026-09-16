@@ -13,10 +13,11 @@ def _place(
     acquired: str | None = None,
     tags: dict[str, str] | None = None,
     matches: tuple[ResourceMatchPattern, ...] = (),
+    aliases: tuple[str, ...] = (),
 ) -> Place:
     return Place(
         name=name,
-        aliases=(),
+        aliases=aliases,
         comment=comment,
         tags=tags or {},
         matches=matches,
@@ -607,6 +608,112 @@ async def test_columns_drop_in_priority_order_and_come_back_on_widening() -> Non
         await pilot.resize_terminal(200, 10)
         await pilot.pause()
         assert "Tags" in _labels(table)
+
+
+async def test_name_cell_carries_the_aliases_dim_like_labgrid_client() -> None:
+    """``labgrid-client places`` prints ``name (alias alias)``; the table
+    says the same thing, with the aliases dim so the name still reads."""
+    from rich.text import Text
+
+    store = _store(
+        _place("bench-01", aliases=("smoke", "ci")),
+        _place("bench-02"),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        cell = table.get_cell("bench-01", "name")
+        assert isinstance(cell, Text)
+        assert cell.plain == "bench-01 (smoke ci)"
+        dimmed = {
+            cell.plain[span.start : span.end] for span in cell.spans if "dim" in str(span.style)
+        }
+        assert dimmed == {" (smoke ci)"}
+        # A place with no aliases is the bare name, as before.
+        assert str(table.get_cell("bench-02", "name")) == "bench-02"
+
+
+async def test_sorting_and_cursor_identity_ignore_the_aliases() -> None:
+    """The alias is decoration on the cell; the row is still keyed and
+    ordered by the place name alone."""
+    store = _store(
+        _place("bench-02", aliases=("aaa",)),
+        _place("bench-01", aliases=("zzz",)),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        names = [table.coordinate_to_cell_key((row, 0)).row_key.value for row in range(2)]
+        assert names == ["bench-01", "bench-02"]
+        table.focus()
+        await pilot.press("j")
+        assert table.cursor_place() == "bench-02"
+        assert table.selected_targets() == ["bench-02"]
+
+
+async def test_narrow_name_budget_drops_the_aliases_before_eliding_the_name() -> None:
+    """The name is what sorts, keys and gets pasted into a command line,
+    so the -narrow cell budget spends itself on the aliases first."""
+    from labgrid_tui.ui.widgets.device_table import NAME_MAX_WIDTH_NARROW
+
+    app = _Harness()
+    async with app.run_test(size=(70, 10)) as pilot:  # -narrow
+        table = app.query_one(DeviceTable)
+        await pilot.pause()
+
+        fits = _place("bench-01", aliases=("sm",))  # 8 + " (sm)" = 13
+        assert table._name_plain(fits, aliases=True) == "bench-01 (sm)"
+
+        # Both of these blow the budget, so the aliases go whole; the name
+        # itself is only elided when it is the part that does not fit.
+        long_alias = _place("bench-02", aliases=("a-much-longer-alias",))
+        assert table._name_plain(long_alias, aliases=True) == "bench-02"
+        long_name = _place("bench-a-rather-long-name", aliases=("x",))
+        elided = table._name_plain(long_name, aliases=True)
+        assert "(" not in elided
+        assert len(elided) <= NAME_MAX_WIDTH_NARROW
+        assert "…" in elided
+
+
+async def test_aliases_are_the_first_thing_width_pressure_takes() -> None:
+    """An alias is a second name for a place the row already names, so it
+    goes before a tag pair is cut or a column is dropped."""
+    places = [
+        _place("bench-01", comment="rack A", tags={"board": "imx8"}, aliases=("smoke",)),
+        _place("bench-02", comment="rack A", tags={"board": "am62x"}, aliases=("bringup",)),
+    ]
+    store = _store(*places)
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert table._show_aliases
+        assert str(table.get_cell("bench-01", "name")) == "bench-01 (smoke)"
+
+        alias_drop: int | None = None
+        for width in range(200, 60, -1):
+            await pilot.resize_terminal(width, 10)
+            await pilot.pause()
+            if not table._show_aliases:
+                alias_drop = width
+                break
+            # Nothing else has given anything up yet.
+            assert table._tags_width is None, width
+            assert "Comment" in _labels(table), width
+
+        assert alias_drop is not None
+        assert str(table.get_cell("bench-01", "name")) == "bench-01"
+
+        # Widening puts them back: the decision is width, not a latch.
+        await pilot.resize_terminal(200, 10)
+        await pilot.pause()
+        assert table._show_aliases
+        assert str(table.get_cell("bench-01", "name")) == "bench-01 (smoke)"
 
 
 def _labels(table: DeviceTable) -> list[str]:

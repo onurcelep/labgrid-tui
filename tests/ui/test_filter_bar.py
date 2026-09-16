@@ -4,10 +4,15 @@ from labgrid_tui.coordinator.models import Place
 from labgrid_tui.ui.widgets.filter_bar import FilterBar, matches_filter
 
 
-def _place(name: str = "tb-1", comment: str = "", tags: dict[str, str] | None = None) -> Place:
+def _place(
+    name: str = "tb-1",
+    comment: str = "",
+    tags: dict[str, str] | None = None,
+    aliases: tuple[str, ...] = (),
+) -> Place:
     return Place(
         name=name,
-        aliases=(),
+        aliases=aliases,
         comment=comment,
         tags=tags or {},
         matches=(),
@@ -32,6 +37,15 @@ def test_matches_fields() -> None:
     assert matches_filter(place, {"power"}, "board=imx8")
     assert matches_filter(place, {"power"}, "POWER")
     assert not matches_filter(place, {"power"}, "console")
+
+
+def test_matches_an_alias_the_table_shows() -> None:
+    """The name cell prints the aliases, and labgrid-client takes one
+    wherever it takes a place name: typing one has to find the place."""
+    place = _place(name="bench-01", aliases=("smoke", "nightly"))
+    assert matches_filter(place, set(), "smoke")
+    assert matches_filter(place, set(), "NIGHTLY")
+    assert not matches_filter(place, set(), "bringup")
 
 
 def test_matches_tags_as_pair_key_or_value() -> None:

@@ -109,10 +109,10 @@ build. Add your own classes under `[capabilities]` in config.toml.
 | Column | Meaning |
 | --- | --- |
 | m | mark indicator, filled when the row is marked |
-| name | labgrid place name |
+| name | place name, then its aliases dim in parentheses |
 | s | status dot, see status dots above |
 | resources | one chip per matched resource class (see above) |
-| user | who acquired the place, "-" if free |
+| user | the user part of the place's acquired `host/user`, "-" if free |
 | tags | the place's set-tags pairs, as labgrid-client shows them |
 | changed | time since the place last changed state |
 | comment | place comment / description |
@@ -120,9 +120,12 @@ build. Add your own classes under `[capabilities]` in config.toml.
 Narrow terminals drop columns lowest-priority first (comment, tags,
 changed, then user) to keep m/name/s/resources visible. Tags are cut
 short rather than dropped for as long as the column fits, and `h`/`l`
-scroll whatever remains. Tag pairs sit in fixed columns so the same key
-lines up on every row; pairs that are the same on every place are dimmed,
-and are the first to be hidden when the terminal is narrow.
+scroll whatever remains. A name's aliases are the first thing width
+pressure takes, ahead of any tag pair or column, and the name itself is
+never cut while they are still there. Tag pairs sit in fixed columns so
+the same key lines up on every row; pairs that are the same on every
+place are dimmed, and are the first to be hidden when the terminal is
+narrow.
 """
 
 TAB_OPERATIONS = """\
@@ -131,7 +134,7 @@ TAB_OPERATIONS = """\
 | Operation | Does |
 | --- | --- |
 | mark then verb | `space` marks rows across refresh; `r`/`shift+r` act on marks, else cursor row |
-| filter | `/` matches name, comment, tags, resource kinds, case-insensitive |
+| filter | `/` matches name, aliases, comment, tags, resource kinds, case-insensitive |
 | get a bench | `r` copies one line that reserves, waits for the allocation and acquires |
 | release | `shift+r` releases the bench; the reservation behind it lapses on its own |
 | tour | `labgrid-tui tour` walks through this dashboard on fake data, no coordinator needed |

@@ -44,8 +44,16 @@ def test_help_text_describes_the_tags_column_and_not_dynamic_ones() -> None:
 
 
 def test_help_text_explains_dimmed_and_first_dropped_shared_pairs() -> None:
-    assert "the same on every place are dimmed" in TAB_TABLE_REFERENCE
-    assert "first to be hidden when the terminal is narrow" in TAB_TABLE_REFERENCE
+    # Source wrapping is not part of the promise; Textual rewraps this to
+    # the pane width anyway.
+    prose = " ".join(TAB_TABLE_REFERENCE.split())
+    assert "the same on every place are dimmed" in prose
+    assert "first to be hidden when the terminal is narrow" in prose
+
+
+def test_help_text_explains_that_aliases_go_first_under_width_pressure() -> None:
+    prose = " ".join(TAB_TABLE_REFERENCE.split())
+    assert "aliases are the first thing width pressure takes" in prose
 
 
 def test_help_text_covers_operations_prose() -> None:

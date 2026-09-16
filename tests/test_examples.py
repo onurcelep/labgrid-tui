@@ -56,3 +56,11 @@ def test_places_script_covers_every_bench_and_tag_key() -> None:
     assert EXPORTER in text
     for verb in ("create", "add-match", "set-tags", "delete"):
         assert verb in text
+
+
+def test_places_script_declares_every_alias_the_tour_shows() -> None:
+    text = PLACES_SH.read_text()
+    assert "add-alias" in text
+    for place, _resources in LAB_SCRIPT.initial:
+        for alias in place.aliases:
+            assert f"{place.name}:{alias}" in text
