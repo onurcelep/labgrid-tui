@@ -28,7 +28,8 @@ def test_help_text_covers_new_keys() -> None:
     for key in ("shift+r", "space", "ctrl+a", "power commands", "acquire"):
         assert key in _ALL_HELP_TABS
     assert "labgrid-client -p PLACE acquire" in TAB_OPERATIONS  # primer kept
-    assert "| `SER` | console |" in TAB_TABLE_REFERENCE  # chip key reference
+    # chip key reference, keyed by the resource class labgrid exports
+    assert "| `NetworkSerialPort` | `SER` |" in TAB_TABLE_REFERENCE
 
 
 def test_help_text_covers_shift_enter_copy_via_select() -> None:

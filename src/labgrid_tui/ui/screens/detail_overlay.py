@@ -204,7 +204,7 @@ class DetailOverlay(ModalScreen[None]):
             kv("Changed", _format_timestamp(place.changed))
         text.append("\n")
 
-        # Capabilities
+        # Resources this place matches, as chips
         resources = store.resources_of(place)
         capability_extra = getattr(self.app, "capability_extra", None)
         online: set[str] = set()
@@ -221,7 +221,7 @@ class DetailOverlay(ModalScreen[None]):
         offline -= online
         caps = sorted(online | offline)
         if caps:
-            kv("Capabilities", ", ".join(f"{abbrev(c)}={c}" for c in caps))
+            kv("Chips", ", ".join(f"{abbrev(c)}={c}" for c in caps))
         if offline:
             kv("Offline", ", ".join(f"{abbrev(c)}={c}" for c in sorted(offline)), value_style="red")
         if unknown:

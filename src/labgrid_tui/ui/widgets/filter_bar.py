@@ -24,7 +24,7 @@ class FilterBar(Input):
     def __init__(self) -> None:
         super().__init__(
             id="filter-bar",
-            placeholder="filter: name, comment, tag=value, capability",
+            placeholder="filter: name, comment, tag=value, resource",
         )
 
     def on_input_changed(self, event: Input.Changed) -> None:

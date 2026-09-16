@@ -10,7 +10,8 @@ exactly what clipped this content at narrow terminal widths.
 the README deliberately does not repeat it.
 """
 
-from labgrid_tui.ui.format import CAPABILITY_ABBREV
+from labgrid_tui.model.capabilities import DEFAULT_CAPABILITIES
+from labgrid_tui.ui.format import abbrev
 
 TAB_KEY_BINDINGS = """\
 labgrid-tui is fully keyboard-driven; vim/fzf muscle memory (`h` `j` `k` `l`,
@@ -74,18 +75,25 @@ labgrid-tui is fully keyboard-driven; vim/fzf muscle memory (`h` `j` `k` `l`,
 | `ctrl+c` | quit |
 """
 
-_CAPABILITY_ROWS = "\n".join(
-    f"| `{abbrev}` | {cap} |" for cap, abbrev in sorted(CAPABILITY_ABBREV.items())
+# Generated from the class mapping itself, so a class added there shows up
+# here without anyone remembering to write a row for it.
+_CHIP_ROWS = "\n".join(
+    f"| `{cls}` | `{abbrev(capability)}` |"
+    for cls, capability in sorted(
+        DEFAULT_CAPABILITIES.items(), key=lambda item: (abbrev(item[1]), item[0])
+    )
 )
 
 TAB_TABLE_REFERENCE = f"""\
-### capability chips
+### resource chips
 
-green = online, red = offline, `?` = unknown class.
+The Resources column carries one chip per resource class the place
+matches: green = online, red = offline, `?` = a class unknown to this
+build. Add your own classes under `[capabilities]` in config.toml.
 
-| Abbrev | Capability |
+| Resource class | Chip |
 | --- | --- |
-{_CAPABILITY_ROWS}
+{_CHIP_ROWS}
 
 ### status dots (S column)
 
@@ -103,14 +111,14 @@ green = online, red = offline, `?` = unknown class.
 | m | mark indicator, filled when the row is marked |
 | name | labgrid place name |
 | s | status dot, see status dots above |
-| capabilities | capability chips, one per resource class (see above) |
+| resources | one chip per matched resource class (see above) |
 | user | who acquired the place, "-" if free |
 | tags | the place's set-tags pairs, as labgrid-client shows them |
 | changed | time since the place last changed state |
 | comment | place comment / description |
 
 Narrow terminals drop columns lowest-priority first (comment, tags,
-changed, then user) to keep m/name/s/capabilities visible. Tags are cut
+changed, then user) to keep m/name/s/resources visible. Tags are cut
 short rather than dropped for as long as the column fits, and `h`/`l`
 scroll whatever remains. Tag pairs sit in fixed columns so the same key
 lines up on every row; pairs that are the same on every place are dimmed,
@@ -123,7 +131,7 @@ TAB_OPERATIONS = """\
 | Operation | Does |
 | --- | --- |
 | mark then verb | `space` marks rows across refresh; `r`/`shift+r` act on marks, else cursor row |
-| filter | `/` matches name, comment, tags, capability abbreviations, case-insensitive |
+| filter | `/` matches name, comment, tags, resource kinds, case-insensitive |
 | get a bench | `r` copies one line that reserves, waits for the allocation and acquires |
 | release | `shift+r` releases the bench; the reservation behind it lapses on its own |
 | tour | `labgrid-tui tour` walks through this dashboard on fake data, no coordinator needed |
@@ -165,7 +173,7 @@ only once the coordinator allocates a place to it.
 
 ### managing places (labgrid-tui shows places; it never edits them)
 
-A red dot with "-" capabilities means no exporter resource matches the place
+A red dot with "-" resources means no exporter resource matches the place
 yet. Places are managed with labgrid-client, all with `-p PLACE`:
 
 | Command | Does |

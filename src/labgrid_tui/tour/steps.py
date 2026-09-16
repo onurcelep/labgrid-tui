@@ -27,8 +27,8 @@ from labgrid_tui.tour.fleet import (
 from labgrid_tui.ui.guidance import POINT_LOG, POINT_STATUS, POINT_TABLE
 
 STEP_TEXT: tuple[str, ...] = (
-    "Every bench, its status dot, who holds it, what it offers. j/k moves. "
-    "Tags are whatever set-tags put on the place.",
+    "Every bench, its status dot, who holds it, the resources it matches. "
+    "j/k moves. Tags are what set-tags put there.",
     "r gets the bench under the cursor: queue if needed, then acquire, as one copied line.",
     "c lists every command for this bench; greyed ones say why. Enter copies one.",
     "Enter opens the bench: resources, tags, comment. Esc closes.",

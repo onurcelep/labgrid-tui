@@ -1,9 +1,9 @@
 """Fleet table: sorted rows, identity-preserving cursor, marks, filter.
 
 Rendering uses a consistent dashboard vocabulary: colored status dots,
-capability abbreviation chips, humanized change ages, and the place's
-tags on one line, in fleet-wide slots so the same key sits at the same
-column on every row.
+one chip per matched resource class, humanized change ages, and the
+place's tags on one line, in fleet-wide slots so the same key sits at the
+same column on every row.
 """
 
 import time
@@ -42,7 +42,7 @@ DOT_OFFLINE = "\U0001f534"
 DOT_FREE = "\U0001f7e2"
 
 # Cap on the Name column's rendered width in -narrow, so one long place
-# name can't push the always-shown columns (M/Name/S/Capabilities) off
+# name can't push the always-shown columns (M/Name/S/Resources) off
 # the right edge before the column-priority drop even gets a chance.
 NAME_MAX_WIDTH_NARROW = 20
 
@@ -58,7 +58,9 @@ _LEAD_COLUMNS: tuple[tuple[str, str], ...] = (
     ("M", "m"),
     ("Name", "name"),
     ("S", "s"),
-    ("Capabilities", "capabilities"),
+    # "Resources" is labgrid's own word for what a place matches; the
+    # internal key stays "capabilities", the name of the chip mapping.
+    ("Resources", "capabilities"),
     ("User", "user"),
 )
 _TRAIL_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -86,7 +88,7 @@ def _cell_fingerprint(cell: str | Text) -> str:
 
     Rich ``Text`` isn't directly comparable with ``==`` in a way that
     reflects styling, so this captures the plain text plus the base
-    style and per-span styles: a dimmed cell or a capability chip
+    style and per-span styles: a dimmed cell or a resource chip
     flipping from green to red must register as a change even when the
     plain text is identical.
     """
@@ -104,7 +106,7 @@ class DeviceTable(DataTable[str | Text]):
     }
     /* Translucent accent tint for the cursor row. Foreground colors are
        preserved via cursor_foreground_priority="renderable" so per-cell
-       Rich Text styles (green/red capability chips) stay visible on the
+       Rich Text styles (green/red resource chips) stay visible on the
        selected row. */
     DeviceTable > .datatable--cursor {
         background: $accent 30%;
