@@ -135,9 +135,9 @@ async def test_table_columns_by_width(
             assert "Comment" in labels
             assert "Changed" in labels
             assert "User" in labels
-        if size[0] <= 80:
-            # Tags is the first column width pressure takes.
-            assert "Tags" not in labels, (size, labels)
+        # 80 columns is the default terminal: Tags survives there, cut if
+        # need be, because Comment is what width pressure takes first.
+        assert "Tags" in labels, (size, labels)
 
 
 async def test_table_columns_restored_after_widening(
@@ -151,7 +151,6 @@ async def test_table_columns_restored_after_widening(
         await pilot.pause()
         table = app.screen.query_one(DeviceTable)
         narrow_labels = [str(col.label) for col in table.ordered_columns]
-        assert "Tags" not in narrow_labels
         assert "Comment" not in narrow_labels
 
         await pilot.resize_terminal(200, 24)

@@ -206,6 +206,19 @@ async def test_tour_starts_live_on_fake_data_with_no_network() -> None:
         assert app._ui_state.show_activity is True
 
 
+async def test_tags_column_survives_the_default_terminal() -> None:
+    """80x24 is the default terminal and the size the tour is written for,
+    so the first step's "Tags are whatever set-tags put on the place" must
+    have a Tags column to point at. Comment is what gives way instead."""
+    app = TourApp()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await _ready(app, pilot)
+        table = app.screen_stack[0].query_one(DeviceTable)
+        labels = [str(column.label) for column in table.ordered_columns]
+        assert "Tags" in labels, labels
+        assert str(table.get_cell("bench-01", "tags")).startswith("board=am62x")
+
+
 @pytest.mark.parametrize("size", [(120, 40), (100, 30)])
 async def test_welcome_card_then_a_spotlit_step_card(size: tuple[int, int]) -> None:
     app = TourApp()

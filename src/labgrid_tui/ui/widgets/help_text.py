@@ -109,9 +109,10 @@ green = online, red = offline, `?` = unknown class.
 | changed | time since the place last changed state |
 | comment | place comment / description |
 
-Narrow terminals drop columns lowest-priority first (tags, comment,
-changed, then user) to keep m/name/s/capabilities visible; tags are cut
-short before the column goes, and `h`/`l` scroll whatever remains.
+Narrow terminals drop columns lowest-priority first (comment, tags,
+changed, then user) to keep m/name/s/capabilities visible. Tags are cut
+short rather than dropped for as long as the column fits, and `h`/`l`
+scroll whatever remains.
 """
 
 TAB_OPERATIONS = """\
