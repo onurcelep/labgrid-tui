@@ -1,6 +1,6 @@
 [project]
 name = "labgrid-tui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Terminal dashboard for labgrid labs: live fleet view and discoverable labgrid-client commands. Independent, third-party project; not affiliated with labgrid."
 requires-python = ">=3.11"
 license = "Apache-2.0 AND LGPL-2.1-or-later"
