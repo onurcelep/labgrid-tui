@@ -67,7 +67,7 @@ async def test_lab_initial_has_six_benches_with_expected_resources() -> None:
         assert by_group == {f"bench-0{i}" for i in range(1, 6)}  # bench-06 has none
         assert all(r.avail for r in resources)
         assert all(p.acquired is None for p in places)
-        assert {p.tags["board"] for p in places} == {"phyboard-a", "phyboard-b", "imx8", "rpi4"}
+        assert {p.tags["board"] for p in places} == {"am62x", "stm32mp1", "imx8", "rpi4"}
     finally:
         await _stop(fleet, task)
 

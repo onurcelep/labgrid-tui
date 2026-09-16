@@ -34,8 +34,8 @@ EXPORTER = "rack-1"
 # _lab_initial): a place with nothing exported yet is a real, common state
 # worth showing in the tour.
 _BENCH_META: tuple[tuple[str, str, str, str, str], ...] = (
-    ("bench-01", "phyboard-a", "ci", "lab1", "CI regression bench"),
-    ("bench-02", "phyboard-b", "ci", "lab1", "CI regression bench"),
+    ("bench-01", "am62x", "ci", "lab1", "CI regression bench"),
+    ("bench-02", "stm32mp1", "ci", "lab1", "CI regression bench"),
     ("bench-03", "imx8", "dev", "lab1", "Dev bring-up bench"),
     ("bench-04", "imx8", "dev", "lab2", "Dev bring-up bench"),
     ("bench-05", "rpi4", "staging", "lab2", "Staging validation bench"),

@@ -18,8 +18,8 @@ COORDINATOR="${LG_COORDINATOR:-127.0.0.1:20408}"
 
 # name:board:env:site. The tags are free-form; labgrid-tui shows the three
 # most common keys as table columns, so these become Board, Env and Site.
-BENCHES="bench-01:phyboard-a:ci:lab1
-bench-02:phyboard-b:ci:lab1
+BENCHES="bench-01:am62x:ci:lab1
+bench-02:stm32mp1:ci:lab1
 bench-03:imx8:dev:lab1
 bench-04:imx8:dev:lab2
 bench-05:rpi4:staging:lab2
