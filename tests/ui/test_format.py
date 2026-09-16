@@ -175,6 +175,48 @@ def test_fit_layout_keeps_the_first_slot_and_crops_it_as_a_last_resort() -> None
     assert str(format_tags({"board": "stm32mp1"}, fitted, width=6)) == "board="
 
 
+def test_fit_layout_never_drops_the_first_slot_even_when_it_is_constant() -> None:
+    """The widest-covered key can be a constant one. Dropping it would leave
+    a place whose only pair is that key with nothing to show, and the pair
+    fits: the guard has to hold in the constant phase too."""
+    places = [{"env": "prod", "owner": "ci"}, {"env": "prod", "owner": "qa"}, {"env": "prod"}]
+    layout = tag_layout(places)
+    assert [(slot.key, slot.constant) for slot in layout.slots] == [("env", True), ("owner", False)]
+
+    fitted = fit_layout(layout, 12)
+    assert [slot.key for slot in fitted.slots] == ["env"]
+    assert [str(format_tags(tags, fitted, width=12)) for tags in places] == [
+        "env=prod",
+        "env=prod",
+        "env=prod",
+    ]
+
+
+def test_a_tagged_place_shows_a_pair_whenever_the_first_slot_fits() -> None:
+    """Across fleets whose leading key every place carries, no cut wide
+    enough for the first slot can reduce a tagged place to the dash that
+    means "no tags": the first slot survives every cut, constant or not."""
+    fleets = [
+        [{"env": "prod", "owner": "ci"}, {"env": "prod", "owner": "qa"}, {"env": "prod"}],
+        [{"site": "hall-a", "rack": "r2"}, {"site": "hall-b"}, {"site": "hall-a", "rack": "r11"}],
+        [{"board": "imx8"}, {"board": "stm32mp1", "owner": "ci"}],
+        [{"owner": "ci", "rack": "r2", "site": "hall-a"}, {"owner": "release", "site": "hall-a"}],
+    ]
+    for places in fleets:
+        layout = tag_layout(places)
+        first = layout.slots[0]
+        # The leading slot is the key with the widest coverage; these fleets
+        # are the case the guarantee is about, where every place carries it.
+        assert all(first.key in tags for tags in places), places
+        for width in range(first.width, layout.total_width + 3):
+            fitted = fit_layout(layout, width)
+            assert fitted.slots[0] == first, (places, width)
+            for tags in places:
+                cell = format_tags(tags, fitted, width=width)
+                assert cell != "-", (places, width, tags)
+                assert str(cell).startswith(f"{first.key}={tags[first.key]}"), (places, width)
+
+
 def test_format_tags_is_a_dash_when_the_cut_took_every_pair_the_place_has() -> None:
     """A place whose only pairs sit in dropped slots reads as empty, not as
     a place with no tags at all: it gets the same dash."""
