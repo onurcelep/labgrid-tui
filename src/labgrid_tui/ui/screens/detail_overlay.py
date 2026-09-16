@@ -17,7 +17,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from labgrid_tui.coordinator.models import ResourceMatchPattern
+from labgrid_tui.coordinator.models import Place, Resource, ResourceMatchPattern
 from labgrid_tui.model.capabilities import capability_of
 from labgrid_tui.model.commands import CommandEntry, evaluate
 from labgrid_tui.model.identity import current_id
@@ -33,6 +33,24 @@ from labgrid_tui.ui.widgets.tour_card import TourCard, place_modal_card, refresh
 def _format_timestamp(epoch: float) -> str:
     """Absolute UTC timestamp, ``%Y-%m-%d %H:%M:%S`` format."""
     return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _place_state(place: Place, resources: list[Resource]) -> str:
+    """The status the table's S dot shows, in words.
+
+    Same order of precedence as the dot (device_table): who holds the
+    place outranks who is queued for it, and both outrank whether there is
+    anything usable to hold. A place no exporter matches counts as offline
+    for the same reason one whose every match is down does: there is
+    nothing on it to use.
+    """
+    if place.acquired:
+        return "Acquired"
+    if place.reservation:
+        return "Reserved"
+    if not any(resource.avail for resource in resources):
+        return "Offline"
+    return "Free"
 
 
 def _format_match(match: ResourceMatchPattern) -> str:
@@ -208,6 +226,14 @@ class DetailOverlay(ModalScreen[None]):
                 text.append(f"    {value}\n")
                 plain.append(f"    {value}")
 
+        resources = store.resources_of(place)
+
+        # This app's own reading of the place, not labgrid's: the same
+        # four-way status the S dot carries in the table, spelled out.
+        # Nothing in Place.show() corresponds to it, so it sits above the
+        # mirror of show() rather than inside it.
+        kv("State", _place_state(place, resources))
+
         # The place itself, field by field in the order Place.show() prints
         # it (labgrid/remote/common.py), so a reader who knows
         # `labgrid-client -v places` finds the same things in the same
@@ -236,7 +262,6 @@ class DetailOverlay(ModalScreen[None]):
 
         # The resources behind those matches, with the chips the table
         # shows for them.
-        resources = store.resources_of(place)
         capability_extra = getattr(self.app, "capability_extra", None)
         online: set[str] = set()
         offline: set[str] = set()
