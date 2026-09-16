@@ -413,19 +413,18 @@ class DeviceTable(DataTable[str | Text]):
     def _mark_cell(self, name: str) -> str:
         return MARK if name in self.marks else ""
 
-    def cursor_row_region(self) -> Region | None:
-        """Screen region of the row under the cursor, clipped to what is visible.
+    def row_region(self, row_index: int) -> Region | None:
+        """Screen region of one rendered row, clipped to what is visible.
 
-        Stops at the end of the Name column rather than spanning the table:
-        the tour anchors its step card to this region, and a bench's name is
-        the part of its row that identifies it.
+        Stops at the end of the last column rather than spanning the widget:
+        DataTable's own row geometry is as wide as the widget, so on a table
+        with spare width it would report blank cells as part of the row.
 
         DataTable exposes row geometry only in its own virtual coordinates
         (``_get_row_region``/``_get_cell_region``, verified against the
         installed Textual), so the header height and both scroll offsets are
         applied here to land in screen coordinates.
         """
-        row_index = self.cursor_row
         if not self.is_valid_row_index(row_index):
             return None
         content = self.scrollable_content_region
@@ -434,20 +433,43 @@ class DeviceTable(DataTable[str | Text]):
         if not body.area:
             return None
         row = self._get_row_region(row_index)
-        width = row.width
-        try:
-            name_column = self._column_keys.index("name")
-        except ValueError:
-            pass  # no Name column yet: anchor on the whole row
-        else:
-            width = self._get_cell_region(Coordinate(row_index, name_column)).right
         placed = Region(
-            body.x - self.scroll_offset.x,
+            content.x - self.scroll_offset.x,
             content.y + row.y - self.scroll_offset.y,
-            width,
+            self._rendered_width(row_index) or row.width,
             row.height,
         )
         visible = placed.intersection(body)
+        return visible if visible.area else None
+
+    def _rendered_width(self, row_index: int) -> int:
+        """Right edge of the last column, in the table's virtual coordinates."""
+        last_column = len(self.columns) - 1
+        if last_column < 0:
+            return 0
+        return int(self._get_cell_region(Coordinate(row_index, last_column)).right)
+
+    def rows_block_region(self) -> Region | None:
+        """Screen region of the rendered rows: header through the last bench.
+
+        The tour anchors its step card to the block rather than to the row
+        under the cursor. A card placed below one row would sit on the
+        benches underneath it, and the table exists to show them; below the
+        block it lands in the table's own free space instead. The cursor
+        row highlight is what still singles out the bench a step is about.
+        """
+        content = self.scrollable_content_region
+        if not self.row_count or not content.area:
+            return None
+        last = self.row_region(self.row_count - 1)
+        if last is None:
+            # The last bench is scrolled out of view, so the block is
+            # everything the viewport currently shows.
+            bottom, width = content.bottom, self._rendered_width(0)
+        else:
+            bottom, width = last.bottom, last.width
+        block = Region(content.x - self.scroll_offset.x, content.y, width, bottom - content.y)
+        visible = block.intersection(content)
         return visible if visible.area else None
 
     def _display_name(self, name: str) -> str:

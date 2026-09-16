@@ -74,9 +74,27 @@ def _title(app: TourApp) -> str:
 
 
 def _table_target(app: TourApp) -> Region:
-    region = app.screen_stack[0].query_one(DeviceTable).cursor_row_region()
+    region = app.screen_stack[0].query_one(DeviceTable).rows_block_region()
     assert region is not None
     return region
+
+
+def _row_targets(app: TourApp) -> list[Region]:
+    """Every rendered bench row, as the compositor placed it."""
+    table = app.screen_stack[0].query_one(DeviceTable)
+    regions = [table.row_region(index) for index in range(table.row_count)]
+    return [region for region in regions if region is not None]
+
+
+def _assert_no_bench_is_hidden(app: TourApp) -> None:
+    """The step card leaves every rendered bench row visible."""
+    card = _card_region(app)
+    table = app.screen_stack[0].query_one(DeviceTable)
+    rows = _row_targets(app)
+    # The row under the cursor is the least that must survive; the card is
+    # anchored to the whole block of rows, so all of them do.
+    assert not card.overlaps(rows[table.cursor_row]), (card, table.cursor_row)
+    assert not [row for row in rows if card.overlaps(row)], card
 
 
 def _log_target(app: TourApp) -> Region:
@@ -196,6 +214,7 @@ async def test_welcome_card_then_a_spotlit_step_card(size: tuple[int, int]) -> N
         assert "j/k" in card.current_text
         _assert_spotlight(app, "main-row")
         _assert_card_anchored(app, _table_target(app), size)
+        _assert_no_bench_is_hidden(app)
 
 
 @pytest.mark.parametrize("size", [(80, 24), (60, 20), (200, 50)])
@@ -209,6 +228,8 @@ async def test_every_step_spotlights_one_widget_and_anchors_the_card(
             assert _title(app) == f"TOUR {index + 1}/{STEP_COUNT}"
             _assert_spotlight(app, bright)
             _assert_card_anchored(app, _anchor(app, bright), size)
+            if bright == "main-row":
+                _assert_no_bench_is_hidden(app)
             await pilot.press("n")
             await pilot.pause()
             await pilot.pause()
@@ -232,6 +253,7 @@ async def test_moving_the_cursor_keeps_the_table_bright() -> None:
         assert _title(app) == "TOUR 2/8"
         assert _dim_state(app) == before
         _assert_card_anchored(app, _table_target(app), size)
+        _assert_no_bench_is_hidden(app)
 
 
 async def test_welcome_n_starts_and_q_quits() -> None:
