@@ -87,6 +87,21 @@ UI state (panels, theme) persists to `~/.local/state/labgrid-tui/ui.toml`.
 </details>
 
 <details>
+<summary><b>Bring your own lab</b></summary>
+
+The six benches in `labgrid-tui tour` are a plausible real lab, written out
+in [examples/lab/](examples/lab/): `exporter.yaml` declares the serial,
+power and SSH resources for `labgrid-exporter`, and `places.sh` runs the
+`labgrid-client` calls that create the matching places and tag them.
+
+Board, Env and Site are not labgrid concepts. A place carries a free-form
+tags dict (`labgrid-client -p NAME set-tags board=imx8 env=dev site=lab1`)
+and labgrid-tui promotes the three most common tag keys to table columns.
+Tag with whatever your lab sorts by; there is no fixed schema.
+
+</details>
+
+<details>
 <summary><b>Command packs</b></summary>
 
 A pack is a TOML file of copy-only recipes. Register it explicitly; nothing
