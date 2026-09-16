@@ -6,16 +6,21 @@ the layout underneath it. It carries no tour state of its own: the caller
 pushes the title and the text, which keeps this widget free of any import
 from the tour package.
 
-Placement is pure geometry (:func:`choose_card_placement`): the card sits
-against one edge of the region the step is about, preferring below, and is
-clamped into the screen. Nothing here reads app state, so the choice is
-unit-testable without an app.
+Placement is pure geometry (:func:`choose_card_placement` on the dashboard,
+:func:`choose_modal_placement` beside a dialog). Neither reads app state, so
+both choices are unit-testable without an app.
 """
 
-from typing import Literal
+import contextlib
+from typing import Any, Literal
 
+from textual.css.query import NoMatches
 from textual.geometry import Offset, Region, Size
+from textual.screen import Screen
+from textual.widget import Widget
 from textual.widgets import Static
+
+from labgrid_tui.ui.guidance import TourGuidance
 
 # Which edge of the target the card sits against.
 Side = Literal["below", "above", "right", "left"]
@@ -74,6 +79,31 @@ def choose_card_placement(target: Region, card: Size, screen: Size) -> tuple[Off
     return _clamped(offset, card, screen), side
 
 
+def choose_modal_placement(dialog: Region, card: Size, screen: Size) -> Offset:
+    """Where to put the card on a screen whose *dialog* box owns the middle.
+
+    Beside the dialog when a side has room, tried below, above, right. When
+    the dialog fills the terminal there is no outside left, and the card
+    goes into its bottom-right corner: the tab strip, the list rows and the
+    title a step points at all sit at the top of a dialog, so the corner is
+    the furthest the card can be from whatever the step is about.
+    """
+    for offset in (
+        Offset(dialog.x, dialog.bottom + CARD_GAP),
+        Offset(dialog.x, dialog.y - CARD_GAP - card.height),
+        Offset(dialog.right + CARD_GAP, dialog.y),
+    ):
+        inside = (
+            offset.x >= 0
+            and offset.y >= 0
+            and offset.x + card.width <= screen.width
+            and offset.y + card.height <= screen.height
+        )
+        if inside:
+            return offset
+    return _clamped(Offset(dialog.right - card.width, dialog.bottom - card.height), card, screen)
+
+
 class TourCard(Static):
     """One step's title and text, floating beside what the step is about."""
 
@@ -106,3 +136,40 @@ class TourCard(Static):
         self.current_text = text
         self.border_title = title
         self.update(text)
+
+
+def refresh_modal_card(screen: Screen[Any], guidance: TourGuidance | None, dialog: str) -> None:
+    """Fill the step card on a modal *screen*, then queue its placement.
+
+    Outside the tour every screen is handed ``None`` and hides its card, so
+    a modal can mount one unconditionally and stay free of tour state.
+    """
+    with contextlib.suppress(NoMatches):
+        card = screen.query_one(TourCard)
+        card.display = guidance is not None
+        if guidance is not None:
+            card.show(guidance.title, guidance.text)
+    screen.call_after_refresh(place_modal_card, screen, dialog)
+
+
+def place_modal_card(screen: Screen[Any], dialog: str) -> None:
+    """Put the step card beside the *dialog* box, or in its corner."""
+    try:
+        card = screen.query_one(TourCard)
+        region = screen.query_one(dialog, Widget).region
+    except NoMatches:
+        return
+    if not card.display or not region.area:
+        return
+    width = card_width(screen.size)
+    if card.applied_width != width:
+        card.applied_width = width
+        card.styles.width = width
+        # The card's height follows from wrapping its text at the new width,
+        # which only the next layout pass knows.
+        screen.call_after_refresh(place_modal_card, screen, dialog)
+    size = card.outer_size
+    if not size.area:
+        return
+    offset = choose_modal_placement(region, size, screen.size)
+    card.styles.offset = (offset.x, offset.y)

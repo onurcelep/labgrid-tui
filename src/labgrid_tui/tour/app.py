@@ -125,7 +125,7 @@ class TourApp(LabgridTuiApp):
         """What a modal pushed right now should show; nothing before the tour starts."""
         if not self.started:
             return None
-        return TourGuidance(text=f"{self._controller.title()}: {self._controller.label()}")
+        return TourGuidance(title=self._controller.title(), text=self._controller.label())
 
     def on_mount(self) -> None:
         super().on_mount()

@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.css.query import NoMatches
-from textual.geometry import Region, Size
+from textual.geometry import Offset, Region, Size
 from textual.screen import Screen
 from textual.widget import Widget
 from textual.widgets import DataTable, Footer, Header, Input, Static
@@ -30,7 +30,6 @@ from labgrid_tui.model.packs import evaluate_pack
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.guidance import (
     DIM_CLASS,
-    GUIDANCE_CSS,
     POINT_LOG,
     POINT_STATUS,
     POINT_TABLE,
@@ -130,7 +129,6 @@ class DashboardScreen(Screen[None]):
        width for the title in a narrow terminal. */
     DashboardScreen.-narrow Header HeaderClock { display: none; }
     """
-        + GUIDANCE_CSS
         + SPOTLIGHT_CSS
     )
 
@@ -358,45 +356,53 @@ class DashboardScreen(Screen[None]):
         size = card.outer_size
         if not size.area:
             return
-        region = self._tour_region()
-        if region is None:
+        block = self._tour_region()
+        if block is None:
             offset = centered_offset(size, self.size)
         else:
-            offset, _side = choose_card_placement(region, size, self.size)
+            home = self._card_home(block, size)
+            offset = home if home is not None else choose_card_placement(block, size, self.size)[0]
         card.styles.offset = (offset.x, offset.y)
 
+    def _card_home(self, block: Region, card: Size) -> Offset | None:
+        """The card's one spot: the table's free space under the last bench.
+
+        Nothing else on this screen can hold a card without covering
+        something the user still needs, so a step that does not fit here
+        falls back to the placement search rather than to another widget.
+        """
+        try:
+            content = self.query_one(DeviceTable).scrollable_content_region
+        except NoMatches:
+            return None
+        free = Region(
+            block.x,
+            block.bottom,
+            max(0, content.right - block.x),
+            max(0, content.bottom - block.bottom),
+        )
+        if card.width > free.width or card.height > free.height:
+            return None
+        return Offset(free.x, free.y)
+
     def _tour_region(self) -> Region | None:
-        """The region the step card anchors to, or None when there is none."""
-        if self._tour_target == POINT_TABLE:
-            try:
-                table = self.query_one(DeviceTable)
-            except NoMatches:
-                return None
-            # The block of rendered rows, so the card lands under the last
-            # bench instead of over one; the whole table is the fallback
-            # while the fleet is still empty.
-            block = table.rows_block_region()
-            if block is not None:
-                return block
-            return table.region if table.region.area else None
-        if self._tour_target == POINT_LOG:
-            try:
-                region = self.query_one(ActivityLog).region
-            except NoMatches:
-                return None
-            # The whole panel: any entry is "the log", and a panel that
-            # reaches the footer leaves the card the space above it.
-            return region if region.area else None
-        if self._tour_target == POINT_STATUS:
-            try:
-                bar = self.query_one(StatusBar)
-            except NoMatches:
-                return None
-            if not bar.region.area:
-                return None
-            width = min(bar.region.width, max(1, bar.first_segment_width))
-            return Region(bar.region.x, bar.region.y, width, 1)
-        return None
+        """The block of table rows every step anchors its card to.
+
+        The card does not move with the target: the spotlight is what says
+        what a step is about, and one home for the card is what keeps it
+        off the benches, the header, the status bar and the log. Steps
+        about nothing on this screen (the closing card) have no anchor.
+        """
+        if self._tour_target is None:
+            return None
+        try:
+            table = self.query_one(DeviceTable)
+        except NoMatches:
+            return None
+        block = table.rows_block_region()
+        if block is not None:
+            return block
+        return table.region if table.region.area else None
 
     def _update_footer_compact(self, size: Size) -> None:
         # Size-derived rather than has_class("-narrow"): this screen's own

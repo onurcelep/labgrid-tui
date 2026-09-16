@@ -6,7 +6,6 @@ discovering the Tab key. The overlay is copy-only: it never executes a
 command itself; the dashboard's verb keys are the only executors.
 """
 
-import contextlib
 import re
 from dataclasses import replace
 
@@ -15,7 +14,6 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, Static, TabbedContent, TabPane, Tabs
 from textual.widgets.option_list import Option
@@ -24,7 +22,8 @@ from labgrid_tui.model.commands import GROUP_ORDER, CommandEntry, EntryState
 from labgrid_tui.model.flags import flags_hint
 from labgrid_tui.ui.actions import ActionRunner
 from labgrid_tui.ui.clipboard import copy_via_suspend
-from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import TourGuidance
+from labgrid_tui.ui.widgets.tour_card import TourCard, place_modal_card, refresh_modal_card
 
 # Keys the option list / screen keep handling themselves; everything else
 # that looks like text entry is forwarded to the filter input (see on_key).
@@ -75,9 +74,11 @@ def _prompt_for(entry: CommandEntry) -> Text:
     return text
 
 
+DIALOG = "#overlay-body"
+
+
 class CommandOverlay(ModalScreen[None]):
-    DEFAULT_CSS = (
-        """
+    DEFAULT_CSS = """
     CommandOverlay { align: center middle; layers: base tour; }
     #overlay-body {
         width: 80%;
@@ -100,9 +101,7 @@ class CommandOverlay(ModalScreen[None]):
     #overlay-tabs { height: 1fr; }
 
     CommandOverlay.-narrow #overlay-body { width: 100%; height: 90%; }
-        """
-        + GUIDANCE_CSS
-    )
+    """
 
     BINDINGS = [
         Binding("escape", "dismiss_overlay", "Close", show=False),
@@ -164,9 +163,6 @@ class CommandOverlay(ModalScreen[None]):
                     slug = _slug(category)
                     with TabPane(category, id=f"tab-{slug}"):
                         yield OptionList(id=f"overlay-list-{slug}")
-            tour = Static("", id="overlay-hint-tour", classes="tour-guidance")
-            tour.add_class("hidden")
-            yield tour
             yield Static(
                 "Enter = copy | Shift+Enter = copy via select | "
                 "Ctrl+E = edit | Left/Right = tabs | Esc = close",
@@ -178,6 +174,11 @@ class CommandOverlay(ModalScreen[None]):
             hint = Static("", id="overlay-edit-hint")
             hint.add_class("hidden")
             yield hint
+        # A screen child, not part of the dialog box: the card is placed
+        # beside it by screen coordinates on its own layer.
+        card = TourCard()
+        card.display = False
+        yield card
 
     def on_mount(self) -> None:
         self._apply_filter("")
@@ -185,6 +186,9 @@ class CommandOverlay(ModalScreen[None]):
         if self._initial_category and self._initial_category in self._by_category:
             self.query_one(TabbedContent).active = f"tab-{_slug(self._initial_category)}"
         self._focus_active_list()
+
+    def on_resize(self, _event: events.Resize) -> None:
+        place_modal_card(self, DIALOG)
 
     # ------------------------------------------------------------------
     # Tabs
@@ -391,15 +395,6 @@ class CommandOverlay(ModalScreen[None]):
         self.dismiss()
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line."""
+        """Tour sideband: show this step's card beside the dialog box."""
         self._guidance = guidance
-        try:
-            line = self.query_one("#overlay-hint-tour", Static)
-        except NoMatches:
-            return
-        line.update("" if guidance is None else guidance.text)
-        line.set_class(guidance is None, "hidden")
-        # The guidance line takes the hint's slot rather than stacking on
-        # it, so a small terminal keeps its rows for the content.
-        with contextlib.suppress(NoMatches):
-            self.query_one("#overlay-hint", Static).set_class(guidance is not None, "hidden")
+        refresh_modal_card(self, guidance, DIALOG)

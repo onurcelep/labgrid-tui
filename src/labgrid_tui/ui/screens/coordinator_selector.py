@@ -7,18 +7,18 @@ it stays part of the reusable surface documented in the README's
 "Building on labgrid-tui" section.
 """
 
-import contextlib
 from dataclasses import dataclass
 
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Label, ListItem, ListView, Static
 
 from labgrid_tui.coordinators import CoordinatorEntry
-from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import TourGuidance
+from labgrid_tui.ui.widgets.tour_card import TourCard, place_modal_card, refresh_modal_card
 
 
 @dataclass(frozen=True)
@@ -44,9 +44,11 @@ class DeleteResult:
 CoordinatorSelectorResult = SwitchResult | CreateResult | EditResult | DeleteResult | None
 
 
+DIALOG = "#coord-modal"
+
+
 class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
-    DEFAULT_CSS = (
-        """
+    DEFAULT_CSS = """
     CoordinatorSelector { align: center middle; layers: base tour; }
     #coord-modal {
         width: 90%;
@@ -76,8 +78,6 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
 
     CoordinatorSelector.-narrow #coord-modal { width: 100%; }
     """
-        + GUIDANCE_CSS
-    )
 
     BINDINGS = [
         Binding("escape", "dismiss_none", "Cancel", show=True),
@@ -117,17 +117,22 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
                 if entry.name == self._current:
                     initial_index = idx
             yield ListView(*items, id="coord-list", initial_index=initial_index)
-            tour = Static("", id="coord-hint-tour", classes="tour-guidance")
-            tour.add_class("hidden")
-            yield tour
             yield Static(
                 "enter=switch | n=new | e=edit | x=delete | esc/q=close",
                 id="coord-hint",
             )
+        # A screen child, not part of the dialog box: the card is placed
+        # beside it by screen coordinates on its own layer.
+        card = TourCard()
+        card.display = False
+        yield card
 
     def on_mount(self) -> None:
         self.query_one("#coord-list", ListView).focus()
         self.update_guidance(self._guidance)
+
+    def on_resize(self, _event: events.Resize) -> None:
+        place_modal_card(self, DIALOG)
 
     def _selected_name(self) -> str | None:
         lv = self.query_one("#coord-list", ListView)
@@ -164,18 +169,9 @@ class CoordinatorSelector(ModalScreen[CoordinatorSelectorResult]):
         self.dismiss(None)
 
     def update_guidance(self, guidance: TourGuidance | None) -> None:
-        """Tour sideband: refresh the guidance line."""
+        """Tour sideband: show this step's card beside the dialog box."""
         self._guidance = guidance
-        try:
-            line = self.query_one("#coord-hint-tour", Static)
-        except NoMatches:
-            return
-        line.update("" if guidance is None else guidance.text)
-        line.set_class(guidance is None, "hidden")
-        # The guidance line takes the hint's slot rather than stacking on
-        # it, so a small terminal keeps its rows for the content.
-        with contextlib.suppress(NoMatches):
-            self.query_one("#coord-hint", Static).set_class(guidance is not None, "hidden")
+        refresh_modal_card(self, guidance, DIALOG)
 
     def _row_text(self, entry: CoordinatorEntry) -> str:
         current = " *" if entry.name == self._current else ""

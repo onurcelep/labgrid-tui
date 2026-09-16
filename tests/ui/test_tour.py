@@ -11,7 +11,17 @@ from pathlib import Path
 import grpc.aio
 import pytest
 from textual.geometry import Region
-from textual.widgets import Footer, Input, Label, ListItem, ListView, Static, TabbedContent
+from textual.screen import Screen
+from textual.widgets import (
+    Footer,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Static,
+    TabbedContent,
+)
 
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.model.commands import CommandEntry
@@ -88,7 +98,7 @@ def _row_targets(app: TourApp) -> list[Region]:
 
 def _assert_no_bench_is_hidden(app: TourApp) -> None:
     """The step card leaves every rendered bench row visible."""
-    card = _card_region(app)
+    card = _card_region(app.screen_stack[0])
     table = app.screen_stack[0].query_one(DeviceTable)
     rows = _row_targets(app)
     # The row under the cursor is the least that must survive; the card is
@@ -106,15 +116,6 @@ def _status_target(app: TourApp) -> Region:
     return Region(bar.region.x, bar.region.y, min(bar.region.width, bar.first_segment_width), 1)
 
 
-def _anchor(app: TourApp, bright: str) -> Region:
-    """The region the step card anchors to, given the widget it spotlights."""
-    if bright == "main-row":
-        return _table_target(app)
-    if bright == "activity-log":
-        return _log_target(app)
-    return _status_target(app)
-
-
 def _dim_state(app: TourApp) -> dict[str, bool]:
     """Whether each top-level widget of the dashboard is dimmed, by id."""
     return {
@@ -124,13 +125,16 @@ def _dim_state(app: TourApp) -> dict[str, bool]:
     }
 
 
-def _card_region(app: TourApp) -> Region:
-    """The step card's region as the compositor placed it."""
-    screen = app.screen_stack[0]
+def _card_region(screen: Screen[object]) -> Region:
+    """The step card's region on *screen*, as the compositor placed it."""
     placed = screen._compositor.visible_widgets.get(screen.query_one(TourCard))
     assert placed is not None, "the step card is not painted"
     region, *_rest = placed
     return region
+
+
+def _in_bounds(region: Region, size: tuple[int, int]) -> bool:
+    return region.x >= 0 and region.y >= 0 and region.right <= size[0] and region.bottom <= size[1]
 
 
 def _assert_spotlight(app: TourApp, bright: str | None) -> None:
@@ -143,12 +147,26 @@ def _assert_spotlight(app: TourApp, bright: str | None) -> None:
     assert all(dim for name, dim in state.items() if name != bright), state
 
 
-def _assert_card_anchored(app: TourApp, target: Region, size: tuple[int, int]) -> None:
-    card = _card_region(app)
+def _assert_card_is_clear(app: TourApp, size: tuple[int, int]) -> None:
+    """The card has one home, the table's free space, and covers nothing else."""
+    screen = app.screen_stack[0]
+    card = _card_region(screen)
+    assert _in_bounds(card, size), card
+    block = _table_target(app)
+    assert not card.overlaps(block), (card, block)
+    assert card.y == block.bottom, (card, block)
+    for widget in (Header, StatusBar, ActivityLog, Footer):
+        region = screen.query_one(widget).region
+        assert not (region.area and card.overlaps(region)), (widget, card, region)
+    _assert_no_bench_is_hidden(app)
+
+
+def _assert_modal_card(screen: Screen[object], target: Region, size: tuple[int, int]) -> str:
+    """The step card is painted beside the dialog, clear of what the step names."""
+    card = _card_region(screen)
+    assert _in_bounds(card, size), card
     assert not card.overlaps(target), (card, target)
-    assert card.y == target.bottom or card.bottom == target.y, (card, target)
-    assert card.x >= 0 and card.y >= 0, card
-    assert card.right <= size[0] and card.bottom <= size[1], card
+    return str(screen.query_one(TourCard).border_title)
 
 
 async def _ready(app: TourApp, pilot: object) -> None:
@@ -213,8 +231,7 @@ async def test_welcome_card_then_a_spotlit_step_card(size: tuple[int, int]) -> N
         assert card.current_text.startswith("Every bench")
         assert "j/k" in card.current_text
         _assert_spotlight(app, "main-row")
-        _assert_card_anchored(app, _table_target(app), size)
-        _assert_no_bench_is_hidden(app)
+        _assert_card_is_clear(app, size)
 
 
 @pytest.mark.parametrize("size", [(80, 24), (60, 20), (200, 50)])
@@ -227,9 +244,7 @@ async def test_every_step_spotlights_one_widget_and_anchors_the_card(
         for index, bright in enumerate(BRIGHT_PER_STEP):
             assert _title(app) == f"TOUR {index + 1}/{STEP_COUNT}"
             _assert_spotlight(app, bright)
-            _assert_card_anchored(app, _anchor(app, bright), size)
-            if bright == "main-row":
-                _assert_no_bench_is_hidden(app)
+            _assert_card_is_clear(app, size)
             await pilot.press("n")
             await pilot.pause()
             await pilot.pause()
@@ -237,8 +252,7 @@ async def test_every_step_spotlights_one_widget_and_anchors_the_card(
         # The tour is no longer about any one widget, so the whole app is
         # bright again and the card floats free of it.
         _assert_spotlight(app, None)
-        card = _card_region(app)
-        assert card.right <= size[0] and card.bottom <= size[1]
+        assert _in_bounds(_card_region(app.screen_stack[0]), size)
 
 
 async def test_moving_the_cursor_keeps_the_table_bright() -> None:
@@ -252,8 +266,7 @@ async def test_moving_the_cursor_keeps_the_table_bright() -> None:
         await pilot.pause()
         assert _title(app) == "TOUR 2/8"
         assert _dim_state(app) == before
-        _assert_card_anchored(app, _table_target(app), size)
-        _assert_no_bench_is_hidden(app)
+        _assert_card_is_clear(app, size)
 
 
 async def test_welcome_n_starts_and_q_quits() -> None:
@@ -291,9 +304,12 @@ async def test_n_skips_one_step_at_a_time_and_the_done_card_stays() -> None:
         assert app.screen_stack[0].query_one(Footer)
 
 
-async def test_guidance_is_mirrored_inside_modals_as_a_plain_line() -> None:
+@pytest.mark.parametrize("size", [(120, 40), (80, 24), (60, 20)])
+async def test_the_same_step_card_follows_the_user_into_a_modal(
+    size: tuple[int, int],
+) -> None:
     app = TourApp()
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=size) as pilot:
         await _ready(app, pilot)
         await pilot.press("j")
         await pilot.press("r")
@@ -301,19 +317,20 @@ async def test_guidance_is_mirrored_inside_modals_as_a_plain_line() -> None:
         assert _title(app) == "TOUR 3/8"
         await pilot.press("c")
         await pilot.pause()
+        await pilot.pause()
         overlay = app.screen
         assert isinstance(overlay, CommandOverlay)
-        line = overlay.query_one("#overlay-hint-tour", Static)
-        assert not line.has_class("hidden")
-        assert str(line.render()).startswith("TOUR 3/8: c lists")
-        # Nothing of the tour is drawn over the modal: no card, no dimming.
-        assert not overlay.query(TourCard)
-        assert not [w for w in overlay.children if w.has_class(DIM_CLASS)]
-        # No inline glyph anywhere: the tab titles are untouched.
+        # No inline glyph anywhere: the tab titles are untouched, and the
+        # card carries the step instead of a second hint line.
         tabs = overlay.query_one(TabbedContent)
         categories = list(overlay._by_category)
         labels = [tabs.get_tab(f"tab-{_slug(c)}").label_text for c in categories]
         assert labels == categories
+        active = tabs.get_tab(f"tab-{_slug(categories[0])}").region
+        assert _assert_modal_card(overlay, active, size) == "TOUR 3/8"
+        assert overlay.query_one(TourCard).current_text.startswith("c lists")
+        # A modal is never dimmed: the card is the only tour chrome there.
+        assert not [w for w in overlay.children if w.has_class(DIM_CLASS)]
         painted = app.export_screenshot()
         assert "TOUR" in painted and "3/8" in painted
         await pilot.press("escape")
@@ -324,18 +341,18 @@ async def test_guidance_is_mirrored_inside_modals_as_a_plain_line() -> None:
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
+        await pilot.pause()
         detail = app.screen
         assert isinstance(detail, DetailOverlay)
-        assert not detail.query_one("#detail-hint-tour").has_class("hidden")
         title = detail.query_one("#detail-title", Static)
         assert str(title.render()).startswith("Device:")
-        assert not detail.query(TourCard)
+        assert _assert_modal_card(detail, title.region, size) == "TOUR 4/8"
         await pilot.press("escape")
         await pilot.pause()
         await pilot.pause()
         assert _title(app) == "TOUR 5/8"
         _assert_spotlight(app, "activity-log")
-        _assert_card_anchored(app, _log_target(app), (120, 40))
+        _assert_card_is_clear(app, size)
 
 
 async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
@@ -347,18 +364,18 @@ async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
             await pilot.pause()
         assert _title(app) == f"TOUR {STEP_COUNT}/{STEP_COUNT}"
         _assert_spotlight(app, "status-bar")
-        _assert_card_anchored(app, _status_target(app), (120, 30))
+        _assert_card_is_clear(app, (120, 30))
         await pilot.press("P")
+        await pilot.pause()
         await pilot.pause()
         selector = app.screen
         assert isinstance(selector, CoordinatorSelector)
-        assert not selector.query_one("#coord-hint-tour").has_class("hidden")
-        # The rows carry no glyph and no card is stacked on the modal.
+        # The rows carry no glyph; the card sits clear of the one the step names.
         items = list(selector.query_one("#coord-list", ListView).query(ListItem))
         names = [e.name for e in selector._entries]
         desk = items[names.index("desk")].query_one(Label)
         assert str(desk.render()).startswith("desk")
-        assert not selector.query(TourCard)
+        assert _assert_modal_card(selector, desk.region, (120, 30)) == "TOUR 8/8"
         await pilot.press("n")
         await pilot.pause()
         assert _title(app) == "TOUR done"
