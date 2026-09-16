@@ -105,13 +105,13 @@ green = online, red = offline, `?` = unknown class.
 | s | status dot, see status dots above |
 | capabilities | capability chips, one per resource class (see above) |
 | user | who acquired the place, "-" if free |
-| tag columns | the fleet's 3 most common tag keys, one column each |
+| tags | the place's set-tags pairs, as labgrid-client shows them |
 | changed | time since the place last changed state |
 | comment | place comment / description |
 
-Narrow terminals drop columns lowest-priority first (comment, changed, tag
-columns, then user) to keep m/name/s/capabilities visible; `h`/`l` scroll
-whatever remains.
+Narrow terminals drop columns lowest-priority first (tags, comment,
+changed, then user) to keep m/name/s/capabilities visible; tags are cut
+short before the column goes, and `h`/`l` scroll whatever remains.
 """
 
 TAB_OPERATIONS = """\

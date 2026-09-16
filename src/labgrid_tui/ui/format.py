@@ -1,14 +1,12 @@
-"""Presentation helpers: capability chips, humanized ages, dynamic tag columns.
+"""Presentation helpers: capability chips, humanized ages, tag pairs.
 
 The rendering vocabulary (colored capability abbreviations, status dots,
 "5d ago" timestamps) stays generic labgrid: nothing lab-specific.
 """
 
-from collections.abc import Iterable
+from collections.abc import Mapping
 
 from rich.text import Text
-
-from labgrid_tui.coordinator.models import Place
 
 CAPABILITY_ABBREV: dict[str, str] = {
     "console": "SER",
@@ -63,10 +61,21 @@ def format_age(seconds: float) -> str:
     return f"{int(seconds // 86400)}d ago"
 
 
-def top_tag_keys(places: Iterable[Place], limit: int = 3) -> list[str]:
-    """The most common tag keys across the fleet, for dynamic table columns."""
-    counts: dict[str, int] = {}
-    for place in places:
-        for key in place.tags:
-            counts[key] = counts.get(key, 0) + 1
-    return sorted(counts, key=lambda k: (-counts[k], k))[:limit]
+def format_tags(tags: Mapping[str, str], width: int | None = None) -> Text | str:
+    """Tags on one line, the way labgrid-client prints them.
+
+    Sorted ``key=value`` pairs separated by a single space, keys dimmed so
+    the values a lab actually scans for stand out. Cut to *width* without
+    an ellipsis: the visible pairs stay exactly what the place carries.
+    """
+    if not tags:
+        return "-"
+    text = Text()
+    for i, (key, value) in enumerate(sorted(tags.items())):
+        if i:
+            text.append(" ")
+        text.append(f"{key}=", style="dim")
+        text.append(value)
+    if width is not None:
+        text.truncate(width, overflow="crop")
+    return text
