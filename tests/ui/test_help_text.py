@@ -56,6 +56,17 @@ def test_help_text_explains_that_aliases_go_first_under_width_pressure() -> None
     assert "aliases are the first thing width pressure takes" in prose
 
 
+def test_help_text_lists_the_detail_fields_in_labgrid_order() -> None:
+    """The overlay mirrors Place.show(); the legend has to name the same
+    fields in the same order or it stops being a map of the screen."""
+    prose = " ".join(TAB_TABLE_REFERENCE.split())
+    order = (
+        "aliases, comment, tags, matches, acquired (the full `host/user`), "
+        "acquired resources, allowed, created, changed, reservation"
+    )
+    assert order in prose
+
+
 def test_help_text_covers_operations_prose() -> None:
     for phrase in ("mark then verb", "filter", "get a bench"):
         assert phrase in TAB_OPERATIONS

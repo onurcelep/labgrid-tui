@@ -17,6 +17,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from labgrid_tui.coordinator.models import ResourceMatchPattern
 from labgrid_tui.model.capabilities import capability_of
 from labgrid_tui.model.commands import CommandEntry, evaluate
 from labgrid_tui.model.identity import current_id
@@ -32,6 +33,21 @@ from labgrid_tui.ui.widgets.tour_card import TourCard, place_modal_card, refresh
 def _format_timestamp(epoch: float) -> str:
     """Absolute UTC timestamp, ``%Y-%m-%d %H:%M:%S`` format."""
     return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_match(match: ResourceMatchPattern) -> str:
+    """One match as labgrid writes it: ``exporter/group/cls[/name]``, plus
+    ``-> rename`` when the match renames the resource.
+
+    Same text as ResourceMatch.__str__ in labgrid, so it can be pasted
+    straight into ``labgrid-client -p PLACE add-match``.
+    """
+    pattern = f"{match.exporter}/{match.group}/{match.cls}"
+    if match.name is not None:
+        pattern += f"/{match.name}"
+    if match.rename:
+        pattern += f" -> {match.rename}"
+    return pattern
 
 
 DIALOG = "#detail-modal"
@@ -184,27 +200,42 @@ class DetailOverlay(ModalScreen[None]):
             text.append(f"{value}\n", style=value_style)
             plain.append(f"{key + ':':<14s}{value}".rstrip())
 
-        # Identity
-        if place.acquired:
-            state = "Acquired"
-        elif place.reservation:
-            state = "Reserved"
-        else:
-            state = "Free"
-        kv("Name", place.name)
-        kv("State", state)
-        kv("Acquired by", place.acquired or "-")
+        def kv_lines(key: str, values: list[str]) -> None:
+            """A field labgrid prints as a heading and one line per entry."""
+            text.append(f"  {key}:\n", style="dim")
+            plain.append(f"{key}:")
+            for value in values:
+                text.append(f"    {value}\n")
+                plain.append(f"    {value}")
+
+        # The place itself, field by field in the order Place.show() prints
+        # it (labgrid/remote/common.py), so a reader who knows
+        # `labgrid-client -v places` finds the same things in the same
+        # places. Empty fields are omitted as show() omits them, except
+        # acquired/created/changed, which it always prints.
+        if place.aliases:
+            kv("Aliases", ", ".join(sorted(place.aliases)))
+        if place.comment:
+            kv("Comment", place.comment)
+        if place.tags:
+            kv("Tags", ", ".join(f"{k}={v}" for k, v in sorted(place.tags.items())))
+        if place.matches:
+            kv_lines("Matches", sorted(_format_match(m) for m in place.matches))
+        # The full "host/user": the table's User column shows only the user
+        # half, and the host is what tells two sessions of one user apart.
+        kv("Acquired", place.acquired or "-")
+        if place.acquired_resources:
+            kv_lines("Acquired resources", sorted(place.acquired_resources))
         if place.allowed:
-            kv("Shared with", ", ".join(place.allowed))
+            kv("Allowed", ", ".join(sorted(place.allowed)))
+        kv("Created", _format_timestamp(place.created) if place.created else "-")
+        kv("Changed", _format_timestamp(place.changed) if place.changed else "-")
         if place.reservation:
             kv("Reservation", self._reservation_text(store, place.reservation))
-        if place.created:
-            kv("Created", _format_timestamp(place.created))
-        if place.changed:
-            kv("Changed", _format_timestamp(place.changed))
         text.append("\n")
 
-        # Resources this place matches, as chips
+        # The resources behind those matches, with the chips the table
+        # shows for them.
         resources = store.resources_of(place)
         capability_extra = getattr(self.app, "capability_extra", None)
         online: set[str] = set()
@@ -220,27 +251,21 @@ class DetailOverlay(ModalScreen[None]):
                 offline.add(capability)
         offline -= online
         caps = sorted(online | offline)
-        if caps:
-            kv("Chips", ", ".join(f"{abbrev(c)}={c}" for c in caps))
-        if offline:
-            kv("Offline", ", ".join(f"{abbrev(c)}={c}" for c in sorted(offline)), value_style="red")
-        if unknown:
-            kv("Unknown", f"{unknown} resource(s) of unrecognized class", value_style="yellow")
 
-        # Tags and comment
-        if place.tags:
-            kv("Tags", ", ".join(f"{k}={v}" for k, v in sorted(place.tags.items())))
-        if place.aliases:
-            kv("Aliases", ", ".join(place.aliases))
-        if place.comment:
-            kv("Comment", place.comment)
-        text.append("\n")
-
-        # Resources
         narrow = is_narrow(self.app.size)
         if resources:
             text.append("Resources\n", style="bold underline")
             plain.append("Resources")
+            if caps:
+                kv("Chips", ", ".join(f"{abbrev(c)}={c}" for c in caps))
+            if offline:
+                kv(
+                    "Offline",
+                    ", ".join(f"{abbrev(c)}={c}" for c in sorted(offline)),
+                    value_style="red",
+                )
+            if unknown:
+                kv("Unknown", f"{unknown} resource(s) of unrecognized class", value_style="yellow")
             for resource in resources:
                 # Resource.acquired carries the PLACE holding the resource
                 # (coordinator wire semantics), not a user. Held by the
