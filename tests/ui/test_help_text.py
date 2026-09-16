@@ -19,8 +19,13 @@ def test_help_text_covers_status_dot_legend() -> None:
 
 
 def test_help_text_covers_table_columns() -> None:
-    for word in ("table columns", "capabilities", "changed", "comment", "tag columns"):
+    for word in ("table columns", "capabilities", "changed", "comment", "tags"):
         assert word in TAB_TABLE_REFERENCE
+
+
+def test_help_text_describes_the_tags_column_and_not_dynamic_ones() -> None:
+    assert "set-tags pairs" in TAB_TABLE_REFERENCE
+    assert "tag columns" not in TAB_TABLE_REFERENCE
 
 
 def test_help_text_covers_operations_prose() -> None:

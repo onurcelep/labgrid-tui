@@ -34,6 +34,18 @@ def test_matches_fields() -> None:
     assert not matches_filter(place, {"power"}, "console")
 
 
+def test_matches_tags_as_pair_key_or_value() -> None:
+    """The Tags column shows key=value pairs, so the filter takes any part
+    of one: the whole pair as typed, the bare key, or the bare value."""
+    place = _place(name="bench-01", tags={"board": "imx8", "site": "lab1"})
+    assert matches_filter(place, set(), "board=imx8")
+    assert matches_filter(place, set(), "board")
+    assert matches_filter(place, set(), "imx8")
+    assert matches_filter(place, set(), "LAB1")
+    assert not matches_filter(place, set(), "board=rpi4")
+    assert not matches_filter(place, set(), "lab2")
+
+
 class _Harness(App[None]):
     def __init__(self) -> None:
         super().__init__()

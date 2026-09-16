@@ -386,3 +386,110 @@ async def test_status_dot_is_red_and_dimmed_without_usable_resources() -> None:
         assert str(rows["tb-up"][2]) == DOT_FREE
         name_cell = rows["tb-none"][1]
         assert isinstance(name_cell, Text) and "dim" in str(name_cell.style)
+
+
+async def test_tags_cell_renders_sorted_dimmed_pairs() -> None:
+    from rich.text import Text
+
+    store = _store(
+        _place("tb-a", tags={"site": "lab1", "board": "imx8", "env": "dev"}),
+        _place("tb-b"),
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        tagged = table.get_cell("tb-a", "tags")
+        assert isinstance(tagged, Text)
+        assert tagged.plain == "board=imx8 env=dev site=lab1"
+        dimmed = {
+            tagged.plain[span.start : span.end] for span in tagged.spans if "dim" in str(span.style)
+        }
+        assert dimmed == {"board=", "env=", "site="}
+        # Untagged places get the same "-" every other empty cell uses.
+        assert str(table.get_cell("tb-b", "tags")) == "-"
+
+
+async def test_tags_shrink_before_any_column_is_dropped() -> None:
+    """Width pressure costs Tags its own width first: the cell is cut,
+    plainly and with no ellipsis, while every column keeps its place. Only
+    when the cut has nothing left to give does the column itself go, and
+    it goes before any other droppable column."""
+    from labgrid_tui.ui.widgets.device_table import TAGS_MIN_WIDTH, _truncated
+
+    place = _place("bench-01", comment="rack A", tags={"board": "imx8", "site": "lab1"})
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        await pilot.pause()
+        rows = [table._cell_values(place, [], None, 0.0)]
+        full = str(rows[0]["tags"])
+        assert full == "board=imx8 site=lab1"
+
+        assert "tags" in table._visible_columns(rows, 200)
+        assert table._tags_width is None  # room for every pair: no cut
+
+        cuts: list[int] = []
+        drop_width: int | None = None
+        for available in range(200, 20, -1):
+            keys = table._visible_columns(rows, available)
+            if "tags" not in keys:
+                drop_width = available
+                # Tags goes first: everything else is still standing.
+                assert "comment" in keys and "changed" in keys and "user" in keys
+                break
+            if table._tags_width is not None:
+                cuts.append(table._tags_width)
+
+        assert drop_width is not None
+        assert cuts  # the column shrinks over a range of widths before it goes
+        assert cuts[0] > cuts[-1] == TAGS_MIN_WIDTH
+
+        cell = _truncated(table._cell_values(place, [], None, 0.0)["tags"], cuts[-1])
+        assert str(cell) == full[: cuts[-1]]
+        assert "\u2026" not in str(cell)
+
+
+async def test_tags_is_the_first_column_dropped_and_comes_back_on_widening() -> None:
+    store = _store(
+        *(
+            _place(
+                f"bench-{i:02d}",
+                comment="bench in rack A with a long description",
+                tags={"board": "imx8", "env": "dev", "site": "lab1"},
+            )
+            for i in range(4)
+        )
+    )
+    app = _Harness()
+    async with app.run_test(size=(200, 10)) as pilot:
+        table = app.query_one(DeviceTable)
+        table.refresh_rows(store, None)
+        await pilot.pause()
+        assert "Tags" in _labels(table)
+
+        dropped: list[str] = []
+        for width in range(196, 44, -4):
+            await pilot.resize_terminal(width, 10)
+            await pilot.pause()
+            labels = _labels(table)
+            dropped += [
+                key
+                for key in ("Tags", "Comment", "Changed", "User")
+                if key not in labels and key not in dropped
+            ]
+            for protected in ("M", "Name", "S", "Capabilities"):
+                assert protected in labels, (width, labels)
+        # Columns leave in priority order, Tags first, and at least Tags
+        # and Comment are gone by the narrowest width tried.
+        assert dropped == ["Tags", "Comment", "Changed", "User"][: len(dropped)]
+        assert dropped[:2] == ["Tags", "Comment"]
+
+        await pilot.resize_terminal(200, 10)
+        await pilot.pause()
+        assert "Tags" in _labels(table)
+
+
+def _labels(table: DeviceTable) -> list[str]:
+    return [str(column.label) for column in table.ordered_columns]
