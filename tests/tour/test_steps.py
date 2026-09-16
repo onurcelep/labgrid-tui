@@ -47,7 +47,7 @@ def test_title_is_one_based_and_label_names_the_key_without_preamble() -> None:
     assert controller.title() == "TOUR 1/8"
     assert not controller.label().startswith("Look at")
     assert "j/k" in controller.label()
-    assert controller.dashboard_marker() == "table"
+    assert controller.dashboard_target() == "table"
     assert controller.modal_target() is None
 
 

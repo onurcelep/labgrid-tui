@@ -10,7 +10,8 @@ from pathlib import Path
 
 import grpc.aio
 import pytest
-from textual.widgets import Footer, Input, Label, Static, TabbedContent
+from textual.geometry import Region
+from textual.widgets import Footer, Input, Label, ListItem, ListView, Static, TabbedContent
 
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.model.commands import CommandEntry
@@ -18,7 +19,6 @@ from labgrid_tui.model.identity import current_id
 from labgrid_tui.tour.app import TourApp
 from labgrid_tui.tour.steps import STEP_COUNT
 from labgrid_tui.tour.welcome import WelcomeScreen
-from labgrid_tui.ui.guidance import MARKER
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay, _slug
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
 from labgrid_tui.ui.screens.coordinator_edit import CoordinatorEditModal
@@ -28,6 +28,8 @@ from labgrid_tui.ui.widgets.activity_log import ActivityLog
 from labgrid_tui.ui.widgets.device_table import DeviceTable
 from labgrid_tui.ui.widgets.status_bar import StatusBar
 from labgrid_tui.ui.widgets.tour_card import TourCard
+from labgrid_tui.ui.widgets.tour_pointer import TourPointer
+from tests.ui.pointer_asserts import assert_points_at, painted_pointer
 
 
 @pytest.fixture(autouse=True)
@@ -60,19 +62,26 @@ def _title(app: TourApp) -> str:
     return str(_card(app).border_title)
 
 
-def _pointed(app: TourApp) -> list[str]:
-    """Where the tour pointer sits on the dashboard right now."""
-    dashboard = app.screen_stack[0]
-    table = dashboard.query_one(DeviceTable)
-    where: list[str] = []
-    cursor = table.cursor_place()
-    if cursor is not None and table.get_cell(cursor, "m") == MARKER:
-        where.append("table")
-    if str(dashboard.query_one(ActivityLog).border_title).startswith(MARKER):
-        where.append("log")
-    if dashboard.query_one(StatusBar).marker == MARKER:
-        where.append("status")
-    return where
+def _centered_text(box: Region, length: int) -> Region:
+    """The centered text run inside a full-width, content-aligned box."""
+    width = min(length, box.width)
+    return Region(box.x + (box.width - width) // 2, box.y, width, 1)
+
+
+def _table_target(app: TourApp) -> Region:
+    region = app.screen_stack[0].query_one(DeviceTable).cursor_row_region()
+    assert region is not None
+    return region
+
+
+def _log_target(app: TourApp) -> Region:
+    region = app.screen_stack[0].query_one(ActivityLog).region
+    return Region(region.x, region.y, region.width, 1)
+
+
+def _status_target(app: TourApp) -> Region:
+    bar = app.screen_stack[0].query_one(StatusBar)
+    return Region(bar.region.x, bar.region.y, min(bar.region.width, bar.first_segment_width), 1)
 
 
 async def _ready(app: TourApp, pilot: object) -> None:
@@ -121,7 +130,7 @@ async def test_welcome_card_then_step_card_inside_the_table_row(size: tuple[int,
         # The welcome card is a centered modal; nothing of the tour is on the
         # dashboard yet and no pointer is shown.
         assert not app.screen_stack[0].query(TourCard)
-        assert _pointed(app) == []
+        assert painted_pointer(app.screen_stack[0]) is None
         await pilot.press("enter")
         assert await _wait_until(pilot, lambda: bool(app.screen_stack[0].query(TourCard)))
         await pilot.pause()
@@ -139,7 +148,11 @@ async def test_welcome_card_then_step_card_inside_the_table_row(size: tuple[int,
         assert _title(app) == "TOUR 1/8"
         assert card.current_text.startswith("Every bench")
         assert "j/k" in card.current_text
-        assert _pointed(app) == ["table"]
+        pointer = app.screen_stack[0].query_one(TourPointer)
+        assert pointer.can_focus is False
+        assert_points_at(app.screen_stack[0], _table_target(app), size)
+        # Never under the step card: the two are chrome for the same step.
+        assert not _overlaps(regions["tour-card"], tuple(painted_pointer(app.screen_stack[0])))
 
 
 async def test_welcome_n_starts_and_q_quits() -> None:
@@ -170,7 +183,7 @@ async def test_n_skips_one_step_at_a_time_and_the_done_card_stays() -> None:
         await pilot.pause()
         assert _title(app) == "TOUR done"
         assert _card(app).current_text.startswith("End of the tour.")
-        assert _pointed(app) == []
+        assert painted_pointer(app.screen_stack[0]) is None
         await pilot.press("n")  # nothing left to skip; the card stays until q
         await pilot.pause()
         assert app.screen_stack[0].query(TourCard)
@@ -192,15 +205,19 @@ async def test_guidance_is_mirrored_inside_modals_with_a_pointer() -> None:
         line = overlay.query_one("#overlay-hint-tour", Static)
         assert not line.has_class("hidden")
         assert str(line.render()).startswith("TOUR 3/8: c lists")
-        # No frame anywhere; the arrow sits on the active tab's title only.
+        # No inline glyph anywhere: the tab titles are untouched and the
+        # pointer sits next to the active tab, on the overlay's own layer.
         tabs = overlay.query_one(TabbedContent)
-        labels = [tabs.get_tab(f"tab-{_slug(c)}").label_text for c in overlay._by_category]
-        assert labels[0] == f"{MARKER} Connect"
-        assert all(not label.startswith(MARKER) for label in labels[1:])
+        categories = list(overlay._by_category)
+        labels = [tabs.get_tab(f"tab-{_slug(c)}").label_text for c in categories]
+        assert labels == categories
+        first = tabs.get_tab(f"tab-{_slug(categories[0])}").region
+        assert_points_at(overlay, first, (120, 40))
         await pilot.press("right")
         await pilot.pause()
-        labels = [tabs.get_tab(f"tab-{_slug(c)}").label_text for c in overlay._by_category]
-        assert labels[1].startswith(MARKER) and not labels[0].startswith(MARKER)
+        await pilot.pause()
+        second = tabs.get_tab(f"tab-{_slug(categories[1])}").region
+        assert_points_at(overlay, second, (120, 40))
         painted = app.export_screenshot()
         assert "TOUR" in painted and "3/8" in painted
         await pilot.press("escape")
@@ -212,11 +229,15 @@ async def test_guidance_is_mirrored_inside_modals_with_a_pointer() -> None:
         detail = app.screen
         assert isinstance(detail, DetailOverlay)
         assert not detail.query_one("#detail-hint-tour").has_class("hidden")
-        assert str(detail.query_one("#detail-title", Static).render()).startswith(MARKER)
+        title = detail.query_one("#detail-title", Static)
+        text = str(title.render())
+        assert text.startswith("Device:")
+        assert_points_at(detail, _centered_text(title.region, len(text)), (120, 40))
         await pilot.press("escape")
         await pilot.pause()
+        await pilot.pause()
         assert _title(app) == "TOUR 5/8"
-        assert _pointed(app) == ["log"]
+        assert_points_at(app.screen_stack[0], _log_target(app), (120, 40))
 
 
 async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
@@ -227,23 +248,24 @@ async def test_n_skips_even_while_coordinator_selector_is_open() -> None:
             await pilot.press("n")
             await pilot.pause()
         assert _title(app) == f"TOUR {STEP_COUNT}/{STEP_COUNT}"
-        assert _pointed(app) == ["status"]
+        assert_points_at(app.screen_stack[0], _status_target(app), (120, 30))
         await pilot.press("P")
         await pilot.pause()
         selector = app.screen
         assert isinstance(selector, CoordinatorSelector)
         assert not selector.query_one("#coord-hint-tour").has_class("hidden")
-        rows = [str(label.render()) for label in selector.query(Label)]
-        assert [row.startswith(MARKER) for row in rows] == [
-            row.lstrip(f"{MARKER} ").startswith("desk") for row in rows
-        ]
-        assert any(row.startswith(MARKER) for row in rows)
+        # The rows carry no glyph; the pointer sits next to the "desk" row.
+        items = list(selector.query_one("#coord-list", ListView).query(ListItem))
+        names = [e.name for e in selector._entries]
+        desk = items[names.index("desk")].query_one(Label)
+        assert str(desk.render()).startswith("desk")
+        assert_points_at(selector, desk.region, (120, 30))
         await pilot.press("n")
         await pilot.pause()
         assert _title(app) == "TOUR done"
         await pilot.press("escape")
         await pilot.pause()
-        assert _pointed(app) == []
+        assert painted_pointer(app.screen_stack[0]) is None
 
 
 async def test_full_story_by_keyboard_alone() -> None:

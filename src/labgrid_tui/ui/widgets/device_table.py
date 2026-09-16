@@ -11,9 +11,10 @@ from rich.text import Text
 from textual import events
 from textual.binding import Binding
 from textual.coordinate import Coordinate
+from textual.geometry import Region
 from textual.message import Message
 from textual.widgets import DataTable
-from textual.widgets.data_table import CellDoesNotExist, RowDoesNotExist
+from textual.widgets.data_table import RowDoesNotExist
 
 from labgrid_tui.coordinator.models import Place, Resource
 from labgrid_tui.coordinator.stream import ConnState
@@ -136,10 +137,6 @@ class DeviceTable(DataTable[str | Text]):
         self.cursor_foreground_priority = "renderable"
         self.zebra_stripes = True
         self.marks: set[str] = set()
-        # Tour pointer: when set, the mark cell of the cursor row shows this
-        # glyph (labgrid_tui.ui.guidance.MARKER) instead of the mark.
-        self.pointer_glyph: str | None = None
-        self._pointer_row: str | None = None
         self.filter_query: str = ""
         self._cache: tuple[FleetStore, dict[str, str] | None] | None = None
         # Last cursor place seen while the store held real (LIVE) data;
@@ -414,24 +411,45 @@ class DeviceTable(DataTable[str | Text]):
         return values
 
     def _mark_cell(self, name: str) -> str:
-        if self.pointer_glyph is not None and name == self.cursor_place():
-            return self.pointer_glyph
         return MARK if name in self.marks else ""
 
-    def set_pointer(self, glyph: str | None) -> None:
-        """Show (or clear) the tour pointer on the cursor row."""
-        self.pointer_glyph = glyph
-        self._refresh_mark_cells(self._pointer_row, self.cursor_place())
-        self._pointer_row = self.cursor_place() if glyph is not None else None
+    def cursor_row_region(self) -> Region | None:
+        """Screen region of the row under the cursor, clipped to what is visible.
 
-    def _refresh_mark_cells(self, *names: str | None) -> None:
-        for name in names:
-            if not name:
-                continue
-            try:
-                self.update_cell(name, "m", self._mark_cell(name))
-            except (RowDoesNotExist, CellDoesNotExist):
-                continue
+        Stops at the end of the Name column rather than spanning the table:
+        a full-width anchor leaves no side free, and a pointer forced above
+        or below it would sit against a neighboring bench's row and appear
+        to single that one out instead.
+
+        DataTable exposes row geometry only in its own virtual coordinates
+        (``_get_row_region``/``_get_cell_region``, verified against the
+        installed Textual), so the header height and both scroll offsets are
+        applied here to land in screen coordinates.
+        """
+        row_index = self.cursor_row
+        if not self.is_valid_row_index(row_index):
+            return None
+        content = self.scrollable_content_region
+        header = self.header_height if self.show_header else 0
+        body = Region(content.x, content.y + header, content.width, content.height - header)
+        if not body.area:
+            return None
+        row = self._get_row_region(row_index)
+        width = row.width
+        try:
+            name_column = self._column_keys.index("name")
+        except ValueError:
+            pass  # no Name column yet: anchor on the whole row
+        else:
+            width = self._get_cell_region(Coordinate(row_index, name_column)).right
+        placed = Region(
+            body.x - self.scroll_offset.x,
+            content.y + row.y - self.scroll_offset.y,
+            width,
+            row.height,
+        )
+        visible = placed.intersection(body)
+        return visible if visible.area else None
 
     def _display_name(self, name: str) -> str:
         # Capped only in -narrow: place names commonly share a long
@@ -491,8 +509,4 @@ class DeviceTable(DataTable[str | Text]):
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         value = event.row_key.value if event.row_key is not None else None
         name = str(value) if value else None
-        if self.pointer_glyph is not None:
-            # The pointer follows the cursor: clear the old row, mark the new.
-            self._refresh_mark_cells(self._pointer_row, name)
-            self._pointer_row = name
         self.post_message(self.CursorChanged(name))

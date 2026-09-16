@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.css.query import NoMatches
-from textual.geometry import Size
+from textual.geometry import Region, Size
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
@@ -27,7 +27,13 @@ from labgrid_tui.model.events import Kind
 from labgrid_tui.model.identity import current_id
 from labgrid_tui.model.packs import evaluate_pack
 from labgrid_tui.ui.actions import ActionRunner
-from labgrid_tui.ui.guidance import GUIDANCE_CSS, TourGuidance
+from labgrid_tui.ui.guidance import (
+    GUIDANCE_CSS,
+    POINT_LOG,
+    POINT_STATUS,
+    POINT_TABLE,
+    TourGuidance,
+)
 from labgrid_tui.ui.layout import MIN_HEIGHT, MIN_WIDTH, is_narrow, too_small
 from labgrid_tui.ui.screens.command_overlay import CommandOverlay
 from labgrid_tui.ui.screens.coordinator_delete import CoordinatorDeleteConfirm
@@ -55,6 +61,7 @@ from labgrid_tui.ui.widgets.status_bar import (
     Segment,
     StatusBar,
 )
+from labgrid_tui.ui.widgets.tour_pointer import TourPointer, update_pointer
 
 if TYPE_CHECKING:
     # Only for the cast in _persist_coordinators below: importing
@@ -81,7 +88,9 @@ GuidanceProvider = Callable[[], TourGuidance | None]
 class DashboardScreen(Screen[None]):
     DEFAULT_CSS = (
         """
-    DashboardScreen { layout: vertical; }
+    /* The tour's pointer floats over everything on its own layer; every
+       other child stays where the vertical layout put it. */
+    DashboardScreen { layout: vertical; layers: base tour; }
     /* Header docks top on its own; nothing else may dock to the same edge:
        Textual overlays same-edge docks instead of stacking them. */
     #status-bar { height: 1; padding: 0 1; background: $panel; color: $text; }
@@ -148,6 +157,9 @@ class DashboardScreen(Screen[None]):
         # anything about tour state.
         self._tour_hook = tour_hook
         self._guidance_provider = guidance_provider
+        # What the tour's pointer is currently aimed at, in this screen's
+        # own terms (POINT_TABLE / POINT_LOG / POINT_STATUS).
+        self._pointer_target: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -254,6 +266,64 @@ class DashboardScreen(Screen[None]):
     def on_resize(self, event: events.Resize) -> None:
         self._update_too_small(event.size)
         self._update_footer_compact(event.size)
+        # Regions are stale until the new layout has been applied.
+        self.call_after_refresh(self.refresh_pointer)
+
+    # ------------------------------------------------------------------
+    # Tour pointer
+    # ------------------------------------------------------------------
+
+    def show_tour_pointer(self) -> TourPointer:
+        """Mount the tour's pointer; only the tour ever calls this."""
+        pointer = TourPointer()
+        self.mount(pointer)
+        self.call_after_refresh(self.refresh_pointer)
+        return pointer
+
+    def set_pointer_target(self, target: str | None) -> None:
+        self._pointer_target = target
+        self.refresh_pointer()
+
+    def refresh_pointer(self) -> None:
+        update_pointer(self, self._pointer_region())
+
+    def _pointer_region(self) -> Region | None:
+        """The current target as a screen region, or None when it is gone.
+
+        A target can be absent for good reasons: the narrow layout hides the
+        activity log, and the too-small notice replaces the table.
+        """
+        if self._pointer_target == POINT_TABLE:
+            try:
+                table = self.query_one(DeviceTable)
+            except NoMatches:
+                return None
+            # The cursor row is what the step is about; the whole table is
+            # the fallback while the fleet is still empty.
+            row = table.cursor_row_region()
+            if row is not None:
+                return row
+            return table.region if table.region.area else None
+        if self._pointer_target == POINT_LOG:
+            try:
+                region = self.query_one(ActivityLog).region
+            except NoMatches:
+                return None
+            # The panel's top line. Landing inside the log is fine here (any
+            # entry is "the log"), unlike the table, where the pointer has to
+            # single out one bench; anchoring on the whole panel instead would
+            # push the pointer up into the step card.
+            return Region(region.x, region.y, region.width, 1) if region.area else None
+        if self._pointer_target == POINT_STATUS:
+            try:
+                bar = self.query_one(StatusBar)
+            except NoMatches:
+                return None
+            if not bar.region.area:
+                return None
+            width = min(bar.region.width, max(1, bar.first_segment_width))
+            return Region(bar.region.x, bar.region.y, width, 1)
+        return None
 
     def _update_footer_compact(self, size: Size) -> None:
         # Size-derived rather than has_class("-narrow"): this screen's own
@@ -292,6 +362,8 @@ class DashboardScreen(Screen[None]):
         capability_extra = getattr(app, "capability_extra", None)
         table.refresh_rows(store, capability_extra)
         self._refresh_status()
+        # Rows may have re-sorted under the cursor.
+        self.refresh_pointer()
 
     def log_line(self, line: str) -> None:
         self.query_one(ActivityLog).log_line(line)
@@ -331,6 +403,7 @@ class DashboardScreen(Screen[None]):
         self._ui_state.show_activity = not self._ui_state.show_activity
         log.set_class(not self._ui_state.show_activity, "hidden")
         self._persist()
+        self.call_after_refresh(self.refresh_pointer)
 
     def action_toggle_help(self) -> None:
         if isinstance(self.app.screen, HelpOverlay):
@@ -515,6 +588,9 @@ class DashboardScreen(Screen[None]):
             self._tour_hook("marks_changed", "")
 
     def on_device_table_cursor_changed(self, message: DeviceTable.CursorChanged) -> None:
+        # After refresh: the table may still have to scroll the new row into
+        # view, which moves the region the pointer is measured against.
+        self.call_after_refresh(self.refresh_pointer)
         if self._tour_hook is not None:
             self._tour_hook("cursor_changed", message.place_name or "")
 
