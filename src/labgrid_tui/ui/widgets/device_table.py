@@ -1,8 +1,8 @@
 """Fleet table: sorted rows, identity-preserving cursor, marks, filter.
 
 Rendering uses a consistent dashboard vocabulary: colored status dots,
-capability abbreviation chips, humanized change ages, and dynamic columns
-for the fleet's most common tag keys.
+capability abbreviation chips, humanized change ages, and the place's
+tags on one line the way labgrid-client prints them.
 """
 
 import time
@@ -19,7 +19,7 @@ from textual.widgets.data_table import RowDoesNotExist
 from labgrid_tui.coordinator.models import Place, Resource
 from labgrid_tui.coordinator.stream import ConnState
 from labgrid_tui.model.capabilities import capabilities_for, capability_of
-from labgrid_tui.ui.format import capability_chips, format_age, top_tag_keys
+from labgrid_tui.ui.format import capability_chips, format_age, format_tags
 from labgrid_tui.ui.layout import is_narrow, middle_ellipsis
 from labgrid_tui.ui.store import FleetStore
 from labgrid_tui.ui.widgets.filter_bar import matches_filter
@@ -44,8 +44,7 @@ NAME_MAX_WIDTH_NARROW = 20
 # actually render closely enough to avoid a scrollbar for no reason.
 _CELL_PADDING = 2
 
-# Fixed leading/trailing column keys; dynamic tag columns are inserted
-# between "user" and "changed". Order here is left-to-right display order,
+# Leading/trailing column keys. Order here is left-to-right display order,
 # not drop priority: see _DROP_ORDER below.
 _LEAD_COLUMNS: tuple[tuple[str, str], ...] = (
     ("M", "m"),
@@ -55,13 +54,22 @@ _LEAD_COLUMNS: tuple[tuple[str, str], ...] = (
     ("User", "user"),
 )
 _TRAIL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("Tags", "tags"),
     ("Changed", "changed"),
     ("Comment", "comment"),
 )
+_ALL_COLUMNS: tuple[tuple[str, str], ...] = _LEAD_COLUMNS + _TRAIL_COLUMNS
 
-# Columns that are always shown regardless of width: identity, status, and
-# what a place can do. Everything else is a candidate for dropping.
-_PROTECTED_KEYS = frozenset({"m", "name", "s", "capabilities"})
+# Column keys in width-pressure drop order, least valuable first. Whatever
+# is not listed here is always shown: identity, status, and what a place
+# can do. Tags go first because they are free-form and repeated across a
+# fleet, and the detail overlay still lists them in full; user is the last
+# to go, since who holds a place outranks a timestamp or a comment.
+_DROP_ORDER: tuple[str, ...] = ("tags", "comment", "changed", "user")
+
+# Floor the Tags column shrinks to before it is dropped instead: below
+# roughly one key=value pair the column costs more width than it informs.
+TAGS_MIN_WIDTH = 12
 
 
 def _cell_fingerprint(cell: str | Text) -> str:
@@ -78,6 +86,14 @@ def _cell_fingerprint(cell: str | Text) -> str:
         spans = ",".join(f"{s.start}-{s.end}:{s.style}" for s in cell._spans)
         return f"{cell.plain}|{base}|{spans}"
     return cell
+
+
+def _truncated(cell: str | Text, width: int) -> str | Text:
+    """Cut *cell* to *width* with no ellipsis, so what is left stays exact."""
+    if isinstance(cell, Text):
+        cell.truncate(width, overflow="crop")
+        return cell
+    return cell[:width]
 
 
 class DeviceTable(DataTable[str | Text]):
@@ -143,11 +159,10 @@ class DeviceTable(DataTable[str | Text]):
         # survives a reconnect's empty-store refresh so the cursor can be
         # restored once the fleet repopulates.
         self._last_cursor: str | None = None
-        # Tag keys currently rendered as columns (subset of _all_tag_keys
-        # once width forces some of them to drop) and the full candidate
-        # set from the fleet's most common tag keys, independent of width.
-        self._tag_columns: list[str] = []
-        self._all_tag_keys: list[str] = []
+        # Width the Tags cells are cut to, or None when they render in
+        # full; set by the column-priority pass, which is what knows how
+        # much room is left once every other column has its own.
+        self._tags_width: int | None = None
         self._column_keys: tuple[str, ...] = ()
         # Diff cache for cell-level updates: place name -> per-column
         # fingerprints, in the same order as _column_keys. Ordered list of
@@ -158,9 +173,9 @@ class DeviceTable(DataTable[str | Text]):
         self._prev_visible_names: list[str] = []
 
     def on_mount(self) -> None:
-        # No fleet data yet, so no tag columns; show every fixed column
-        # until the first refresh_rows() call has real content to size.
-        self._build_columns(tuple(key for _label, key in _LEAD_COLUMNS + _TRAIL_COLUMNS), [])
+        # No fleet data yet to size columns against; show all of them
+        # until the first refresh_rows() call has real content.
+        self._build_columns(tuple(key for _label, key in _ALL_COLUMNS))
 
     def on_resize(self, _event: events.Resize) -> None:
         # Column priority depends on the table's own width, not just on
@@ -168,64 +183,52 @@ class DeviceTable(DataTable[str | Text]):
         # column that only just regained enough room.
         self._rerender()
 
-    def _build_columns(self, column_keys: tuple[str, ...], tag_keys: list[str]) -> None:
+    def _build_columns(self, column_keys: tuple[str, ...]) -> None:
         self.clear(columns=True)
-        all_columns = (
-            _LEAD_COLUMNS
-            + tuple((key.capitalize(), f"tag_{key}") for key in tag_keys)
-            + _TRAIL_COLUMNS
-        )
-        columns = tuple((label, key) for label, key in all_columns if key in column_keys)
+        columns = tuple((label, key) for label, key in _ALL_COLUMNS if key in column_keys)
         self.add_columns(*columns)
-        self._all_tag_keys = tag_keys
-        self._tag_columns = [key for key in tag_keys if f"tag_{key}" in column_keys]
         self._column_keys = tuple(key for _label, key in columns)
         # A column rebuild clears every row; cached fingerprints and the
         # visible-name list are now meaningless.
         self._prev_fingerprints.clear()
         self._prev_visible_names = []
 
-    @staticmethod
-    def _drop_order(tag_keys: list[str]) -> list[str]:
-        """Column keys in width-pressure drop order, least valuable first.
-
-        Tags drop from the least common upward; user is the last of the
-        droppable columns to go, since who holds a place is worth more
-        than a tag/timestamp/comment column once something has to give.
-        """
-        return ["comment", "changed", *[f"tag_{key}" for key in reversed(tag_keys)], "user"]
-
     def _visible_columns(
         self,
-        tag_keys: list[str],
         rows: list[dict[str, str | Text]],
         available_width: int,
     ) -> tuple[str, ...]:
-        all_columns = (
-            _LEAD_COLUMNS
-            + tuple((key.capitalize(), f"tag_{key}") for key in tag_keys)
-            + _TRAIL_COLUMNS
-        )
-        content_width = {key: len(label) for label, key in all_columns}
+        """Which columns fit, and how wide the Tags cells may render.
+
+        Sets ``_tags_width`` as a side effect: Tags is the one column that
+        gives up width before anything gives up its place, so a heavily
+        tagged fleet costs its own cells a cut, not the table a column.
+        """
+        content_width = {key: len(label) for label, key in _ALL_COLUMNS}
         for row in rows:
             for key, cell in row.items():
                 text = cell.plain if isinstance(cell, Text) else cell
                 if len(text) > content_width[key]:
                     content_width[key] = len(text)
 
-        shown = {key for _label, key in all_columns}
+        shown = {key for _label, key in _ALL_COLUMNS}
 
         def total_width() -> int:
             return sum(content_width[key] + _CELL_PADDING for key in shown)
 
+        self._tags_width = None
         if available_width > 0:
-            for key in self._drop_order(tag_keys):
-                if key not in shown or key in _PROTECTED_KEYS:
-                    continue
+            excess = total_width() - available_width
+            if excess > 0:
+                shrunk = max(TAGS_MIN_WIDTH, content_width["tags"] - excess)
+                if shrunk < content_width["tags"]:
+                    self._tags_width = shrunk
+                    content_width["tags"] = shrunk
+            for key in _DROP_ORDER:
                 if total_width() <= available_width:
                     break
                 shown.discard(key)
-        return tuple(key for _label, key in all_columns if key in shown)
+        return tuple(key for _label, key in _ALL_COLUMNS if key in shown)
 
     def cursor_place(self) -> str | None:
         if not self.row_count:
@@ -263,14 +266,13 @@ class DeviceTable(DataTable[str | Text]):
 
         if not stale:
             self.marks &= set(store.places)
-            tag_keys = top_tag_keys(store.places.values())
             rows = [
-                self._cell_values(place, resources, capability_extra, now, tag_keys)
+                self._cell_values(place, resources, capability_extra, now)
                 for place, resources in visible
             ]
-            column_keys = self._visible_columns(tag_keys, rows, self._available_width())
-            if column_keys != self._column_keys or tag_keys != self._all_tag_keys:
-                self._build_columns(column_keys, tag_keys)
+            column_keys = self._visible_columns(rows, self._available_width())
+            if column_keys != self._column_keys:
+                self._build_columns(column_keys)
 
         new_names = [place.name for place, _resources in visible]
 
@@ -348,7 +350,9 @@ class DeviceTable(DataTable[str | Text]):
         capability_extra: dict[str, str] | None,
         now: float,
     ) -> list[str | Text]:
-        values = self._cell_values(place, resources, capability_extra, now, self._tag_columns)
+        values = self._cell_values(place, resources, capability_extra, now)
+        if self._tags_width is not None:
+            values["tags"] = _truncated(values["tags"], self._tags_width)
         return [values[key] for key in self._column_keys]
 
     def _cell_values(
@@ -357,14 +361,13 @@ class DeviceTable(DataTable[str | Text]):
         resources: list[Resource],
         capability_extra: dict[str, str] | None,
         now: float,
-        tag_keys: list[str],
     ) -> dict[str, str | Text]:
         """Every candidate cell for ``place``, keyed by column key.
 
-        Computed for the full candidate column set (not just the ones
-        currently built) so the column-priority width estimate in
+        Computed for the full column set (not just the ones currently
+        built) and untruncated, so the column-priority width estimate in
         ``_visible_columns`` can measure a column before deciding whether
-        to show it.
+        to show it, shrink it, or drop it.
         """
         online: set[str] = set()
         offline: set[str] = set()
@@ -392,10 +395,15 @@ class DeviceTable(DataTable[str | Text]):
         user = place.acquired.split("/")[-1] if place.acquired else "-"
         changed = format_age(now - place.changed) if place.changed else "-"
 
-        def dimmed(value: str) -> str | Text:
+        def dimmed(value: str | Text) -> str | Text:
             # An all-offline place is not currently operable; dim its plain
             # cells (chips already carry red).
-            return Text(value, style="dim") if all_offline else value
+            if not all_offline:
+                return value
+            if isinstance(value, Text):
+                value.style = "dim"
+                return value
+            return Text(value, style="dim")
 
         values: dict[str, str | Text] = {
             "m": self._mark_cell(place.name),
@@ -403,11 +411,10 @@ class DeviceTable(DataTable[str | Text]):
             "s": dot,
             "capabilities": capability_chips(online, offline, unknown=unknown),
             "user": dimmed(user),
+            "tags": dimmed(format_tags(place.tags)),
             "changed": dimmed(changed),
             "comment": dimmed(place.comment),
         }
-        for key in tag_keys:
-            values[f"tag_{key}"] = dimmed(place.tags.get(key, "-"))
         return values
 
     def _mark_cell(self, name: str) -> str:

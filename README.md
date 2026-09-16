@@ -94,10 +94,10 @@ in [examples/lab/](examples/lab/): `exporter.yaml` declares the serial,
 power and SSH resources for `labgrid-exporter`, and `places.sh` runs the
 `labgrid-client` calls that create the matching places and tag them.
 
-Board, Env and Site are not labgrid concepts. A place carries a free-form
-tags dict (`labgrid-client -p NAME set-tags board=imx8 env=dev site=lab1`)
-and labgrid-tui promotes the three most common tag keys to table columns.
-Tag with whatever your lab sorts by; there is no fixed schema.
+A place carries a free-form tags dict (`labgrid-client -p NAME set-tags
+board=imx8 env=dev site=lab1`) and labgrid-tui shows it in one Tags
+column, sorted `key=value` pairs, the way labgrid-client prints it. Tag
+with whatever your lab sorts by; there is no fixed schema.
 
 </details>
 

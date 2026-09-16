@@ -18,8 +18,8 @@ set -eu
 EXPORTER="${LG_EXPORTER:-rack-1}"
 COORDINATOR="${LG_COORDINATOR:-127.0.0.1:20408}"
 
-# name:board:env:site. The tags are free-form; labgrid-tui shows the three
-# most common keys as table columns, so these become Board, Env and Site.
+# name:board:env:site. The tags are free-form; labgrid-tui shows them in
+# the Tags column, and `labgrid-client reserve` filters on the same pairs.
 BENCHES="bench-01:am62x:ci:lab1
 bench-02:stm32mp1:ci:lab1
 bench-03:imx8:dev:lab1

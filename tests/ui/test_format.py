@@ -1,28 +1,11 @@
 from rich.text import Text
 
-from labgrid_tui.coordinator.models import Place
 from labgrid_tui.ui.format import (
     abbrev,
     capability_chips,
     format_age,
-    top_tag_keys,
+    format_tags,
 )
-
-
-def _place(name: str, tags: dict[str, str]) -> Place:
-    return Place(
-        name=name,
-        aliases=(),
-        comment="",
-        tags=tags,
-        matches=(),
-        acquired=None,
-        acquired_resources=(),
-        allowed=(),
-        created=0.0,
-        changed=0.0,
-        reservation=None,
-    )
 
 
 def test_abbrev_known_and_fallback() -> None:
@@ -57,11 +40,27 @@ def test_format_age() -> None:
     assert format_age(5 * 86400 + 7) == "5d ago"
 
 
-def test_top_tag_keys_frequency_then_name() -> None:
-    places = [
-        _place("a", {"env": "dev", "site": "x"}),
-        _place("b", {"env": "dev", "site": "y", "gateway": "g"}),
-        _place("c", {"env": "prod", "board": "imx8"}),
-    ]
-    assert top_tag_keys(places, limit=3) == ["env", "site", "board"]
-    assert top_tag_keys([], limit=3) == []
+def test_format_tags_sorted_pairs_with_dimmed_keys() -> None:
+    tags = format_tags({"site": "lab1", "board": "imx8", "env": "dev"})
+    assert isinstance(tags, Text)
+    assert tags.plain == "board=imx8 env=dev site=lab1"
+    dimmed = {tags.plain[span.start : span.end] for span in tags.spans if "dim" in str(span.style)}
+    assert dimmed == {"board=", "env=", "site="}
+
+
+def test_format_tags_empty_is_a_dash() -> None:
+    assert format_tags({}) == "-"
+
+
+def test_format_tags_cut_to_width_without_an_ellipsis() -> None:
+    tags = format_tags({"board": "imx8", "env": "dev"}, width=12)
+    assert isinstance(tags, Text)
+    assert tags.plain == "board=imx8 e"
+    # A cut keeps the styling of what survives: the first key is still dim.
+    assert any("dim" in str(span.style) for span in tags.spans)
+
+
+def test_format_tags_width_wider_than_the_pairs_changes_nothing() -> None:
+    tags = format_tags({"board": "imx8"}, width=40)
+    assert isinstance(tags, Text)
+    assert tags.plain == "board=imx8"

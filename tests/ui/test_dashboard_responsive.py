@@ -130,10 +130,14 @@ async def test_table_columns_by_width(
         for required in ("M", "Name", "S", "Capabilities"):
             assert required in labels, (size, labels)
         if size[0] >= 160:
-            # Comfortable width: everything, including tag columns, fits.
+            # Comfortable width: every column fits, Tags included.
+            assert "Tags" in labels
             assert "Comment" in labels
             assert "Changed" in labels
             assert "User" in labels
+        if size[0] <= 80:
+            # Tags is the first column width pressure takes.
+            assert "Tags" not in labels, (size, labels)
 
 
 async def test_table_columns_restored_after_widening(
@@ -147,11 +151,13 @@ async def test_table_columns_restored_after_widening(
         await pilot.pause()
         table = app.screen.query_one(DeviceTable)
         narrow_labels = [str(col.label) for col in table.ordered_columns]
+        assert "Tags" not in narrow_labels
         assert "Comment" not in narrow_labels
 
         await pilot.resize_terminal(200, 24)
         await pilot.pause()
         wide_labels = [str(col.label) for col in table.ordered_columns]
+        assert "Tags" in wide_labels
         assert "Comment" in wide_labels
         assert "Changed" in wide_labels
 
