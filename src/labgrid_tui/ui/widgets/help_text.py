@@ -126,6 +126,14 @@ never cut while they are still there. Tag pairs sit in fixed columns so
 the same key lines up on every row; pairs that are the same on every
 place are dimmed, and are the first to be hidden when the terminal is
 narrow.
+
+### detail view (`enter` / `d`)
+
+The place, field by field in the order `labgrid-client -v places` prints
+it: aliases, comment, tags, matches, acquired (the full `host/user`),
+acquired resources, allowed, created, changed, reservation. A field the
+place does not carry is left out, as labgrid leaves it out. Below that
+come the resources those matches found, each with its class and params.
 """
 
 TAB_OPERATIONS = """\

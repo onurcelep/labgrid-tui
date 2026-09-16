@@ -63,12 +63,90 @@ async def test_detail_shows_place_info(
         assert "tb-1" in title
         assert "bench one" in body
         assert "env=dev" in body
-        assert "host/alice" in body
-        assert "State:" in body and "Acquired" in body
+        # The full host/user, not the user half the table's User column shows.
+        assert "Acquired:     host/alice" in body
+        assert "exp1/g1/*" in body  # the match, as add-match would take it
         assert "Resources" in body
         assert "serial" in body and "NetworkSerialPort" in body
         assert "(online)" in body
         assert "SER=console" in body
+
+
+async def test_detail_fields_follow_labgrid_place_show_order(
+    fake_coordinator: tuple[FakeCoordinator, str],
+) -> None:
+    """Place.show() in labgrid/remote/common.py prints aliases, comment,
+    tags, matches, acquired, acquired resources, allowed, created, changed,
+    reservation. The overlay says the same things in the same order, then
+    the resources behind the matches."""
+    servicer, address = fake_coordinator
+    place = pb2.Place(
+        name="tb-1",
+        aliases=["smoke", "alpha"],
+        comment="bench one",
+        tags={"env": "dev"},
+        acquired="host/alice",
+        acquired_resources=["exp1/g1/NetworkSerialPort/serial"],
+        allowed=["host9/bob"],
+        created=1_700_000_000.0,
+        changed=1_700_003_600.0,
+        reservation="TOK",
+    )
+    place.matches.add(exporter="exp1", group="g1", cls="*")
+    servicer.places.append(place)
+    servicer.resources.append(_serial())
+    app = LabgridTuiApp(_config(address))
+    async with app.run_test() as pilot:
+        overlay = await _open_detail(app, pilot, "tb-1")
+        body = str(overlay.query_one("#detail-body", Static).render())
+        expected = [
+            "Aliases:",
+            "Comment:",
+            "Tags:",
+            "Matches:",
+            "Acquired:",
+            "Acquired resources:",
+            "Allowed:",
+            "Created:",
+            "Changed:",
+            "Reservation:",
+            "Resources",
+        ]
+        positions = [body.index(label) for label in expected]
+        assert positions == sorted(positions), body
+        # Aliases print sorted, as show() prints them.
+        assert "Aliases:      alpha, smoke" in body
+        assert "exp1/g1/NetworkSerialPort/serial" in body
+        assert "Allowed:      host9/bob" in body
+
+
+async def test_detail_always_prints_acquired_created_and_changed(
+    fake_coordinator: tuple[FakeCoordinator, str],
+) -> None:
+    """show() omits an empty field but always prints these three; a free,
+    never-touched place must still say so rather than leave a gap."""
+    servicer, address = fake_coordinator
+    servicer.places.append(pb2.Place(name="tb-1"))
+    app = LabgridTuiApp(_config(address))
+    async with app.run_test() as pilot:
+        overlay = await _open_detail(app, pilot, "tb-1")
+        body = str(overlay.query_one("#detail-body", Static).render())
+        assert "Acquired:     -" in body
+        assert "Created:      -" in body
+        assert "Changed:      -" in body
+        for omitted in ("Aliases:", "Comment:", "Tags:", "Matches:", "Allowed:", "Reservation:"):
+            assert omitted not in body, omitted
+
+
+def test_format_match_reads_like_labgrid_writes_it() -> None:
+    from labgrid_tui.coordinator.models import ResourceMatchPattern
+    from labgrid_tui.ui.screens.detail_overlay import _format_match
+
+    assert _format_match(ResourceMatchPattern("exp1", "g1", "*")) == "exp1/g1/*"
+    named = ResourceMatchPattern("exp1", "g1", "NetworkSerialPort", "serial")
+    assert _format_match(named) == "exp1/g1/NetworkSerialPort/serial"
+    renamed = ResourceMatchPattern("exp1", "g1", "NetworkSerialPort", "serial", "console")
+    assert _format_match(renamed) == "exp1/g1/NetworkSerialPort/serial -> console"
 
 
 async def test_detail_shows_my_reservation_owner_and_state(

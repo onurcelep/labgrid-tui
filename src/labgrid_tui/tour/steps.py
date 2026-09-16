@@ -31,7 +31,8 @@ STEP_TEXT: tuple[str, ...] = (
     "j/k moves. Tags are what set-tags put there.",
     "r gets the bench under the cursor: queue if needed, then acquire, as one copied line.",
     "c lists every command for this bench; greyed ones say why. Enter copies one.",
-    "Enter opens the bench: resources, tags, comment. Esc closes.",
+    "Enter opens the bench in labgrid's order: aliases, comment, tags, "
+    "matches, resources. Esc closes.",
     "The lab moved: alice took bench-03, bench-05 lost its serial port. "
     "The log shows it. n continues.",
     "Move to bench-03, alice's, and press r. It queues you; when alice releases, "
