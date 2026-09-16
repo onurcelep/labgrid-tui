@@ -126,17 +126,18 @@ def tag_layout(places: Iterable[Mapping[str, str]]) -> TagLayout:
 def fit_layout(layout: TagLayout, width: int) -> TagLayout:
     """The slots of *layout* that survive a cell cut to *width*.
 
-    Constant-key slots go first, rightmost first, because they tell the
-    reader nothing one place at a time. Derived from the layout alone, not
-    from a row: every row must drop the same slots or the remaining pairs
-    stop lining up.
+    Slots go whole, rightmost first, constant keys before anything else:
+    half a pair reads as a truncated value rather than as a hidden one, and
+    a constant key tells the reader nothing one place at a time. The first
+    slot is never dropped, so a cell always says something about the place;
+    it alone can end up cropped when even one pair does not fit. Derived
+    from the layout alone, not from a row: every row must drop the same
+    slots or the remaining pairs stop lining up.
     """
     slots = list(layout.slots)
-    while TagLayout(tuple(slots)).total_width > width:
+    while len(slots) > 1 and TagLayout(tuple(slots)).total_width > width:
         constant = [i for i, slot in enumerate(slots) if slot.constant]
-        if not constant:
-            break
-        slots.pop(constant[-1])
+        slots.pop(constant[-1] if constant else len(slots) - 1)
     return TagLayout(tuple(slots))
 
 
@@ -148,10 +149,15 @@ def format_tags(
     Each pair is padded to its slot so the same key sits at the same column
     on every row, and a place missing a key leaves that slot blank. Keys
     stay dim so the values a lab scans for stand out; a constant key is
-    dimmed whole, value included. Cut to *width* without an ellipsis: the
-    visible pairs stay exactly what the place carries.
+    dimmed whole, value included. *width* is the last-resort crop for a
+    layout already fitted to it, and it takes no ellipsis: the visible
+    pairs stay exactly what the place carries.
     """
     if not tags:
+        return "-"
+    if not any(slot.key in tags for slot in layout.slots):
+        # Every pair this place carries sits in a slot the cut dropped;
+        # blank would read as an untagged place, which it is not.
         return "-"
     text = Text()
     for i, slot in enumerate(layout.slots):
