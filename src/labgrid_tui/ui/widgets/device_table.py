@@ -62,13 +62,14 @@ _ALL_COLUMNS: tuple[tuple[str, str], ...] = _LEAD_COLUMNS + _TRAIL_COLUMNS
 
 # Column keys in width-pressure drop order, least valuable first. Whatever
 # is not listed here is always shown: identity, status, and what a place
-# can do. Tags go first because they are free-form and repeated across a
-# fleet, and the detail overlay still lists them in full; user is the last
-# to go, since who holds a place outranks a timestamp or a comment.
-_DROP_ORDER: tuple[str, ...] = ("tags", "comment", "changed", "user")
+# can do. Comment goes first because most places carry none; user is the
+# last to go, since who holds a place outranks a timestamp.
+_DROP_ORDER: tuple[str, ...] = ("comment", "tags", "changed", "user")
 
-# Floor the Tags column shrinks to before it is dropped instead: below
-# roughly one key=value pair the column costs more width than it informs.
+# Floor the Tags column shrinks to before it is considered for dropping.
+# Tags shrink ahead of every drop, so the default 80-column terminal keeps
+# a cut Tags column rather than losing it; below roughly one key=value
+# pair the column would cost more width than it informs.
 TAGS_MIN_WIDTH = 12
 
 
@@ -89,11 +90,16 @@ def _cell_fingerprint(cell: str | Text) -> str:
 
 
 def _truncated(cell: str | Text, width: int) -> str | Text:
-    """Cut *cell* to *width* with no ellipsis, so what is left stays exact."""
+    """Cut *cell* to *width* with no ellipsis, so what is left stays exact.
+
+    The cut lands mid-pair as often as not; trailing blanks left by a cut
+    on a separator would read as a column wider than its content.
+    """
     if isinstance(cell, Text):
         cell.truncate(width, overflow="crop")
+        cell.rstrip()
         return cell
-    return cell[:width]
+    return cell[:width].rstrip()
 
 
 class DeviceTable(DataTable[str | Text]):
@@ -217,17 +223,24 @@ class DeviceTable(DataTable[str | Text]):
             return sum(content_width[key] + _CELL_PADDING for key in shown)
 
         self._tags_width = None
+        natural_tags = content_width["tags"]
         if available_width > 0:
+            # Shrink Tags first, so a wide tag set costs its own cells a
+            # cut rather than the table a whole column...
             excess = total_width() - available_width
             if excess > 0:
-                shrunk = max(TAGS_MIN_WIDTH, content_width["tags"] - excess)
-                if shrunk < content_width["tags"]:
-                    self._tags_width = shrunk
-                    content_width["tags"] = shrunk
+                content_width["tags"] = max(TAGS_MIN_WIDTH, natural_tags - excess)
             for key in _DROP_ORDER:
                 if total_width() <= available_width:
                     break
                 shown.discard(key)
+            # ...then hand back whatever the drops freed, so Tags is only
+            # as cut as the columns that survived actually require.
+            slack = available_width - total_width()
+            if slack > 0:
+                content_width["tags"] = min(natural_tags, content_width["tags"] + slack)
+            if content_width["tags"] < natural_tags:
+                self._tags_width = content_width["tags"]
         return tuple(key for _label, key in _ALL_COLUMNS if key in shown)
 
     def cursor_place(self) -> str | None:

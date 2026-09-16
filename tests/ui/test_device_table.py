@@ -414,8 +414,8 @@ async def test_tags_cell_renders_sorted_dimmed_pairs() -> None:
 async def test_tags_shrink_before_any_column_is_dropped() -> None:
     """Width pressure costs Tags its own width first: the cell is cut,
     plainly and with no ellipsis, while every column keeps its place. Only
-    when the cut has nothing left to give does the column itself go, and
-    it goes before any other droppable column."""
+    once the cut has nothing left to give does a column go, and Comment
+    is the one that goes."""
     from labgrid_tui.ui.widgets.device_table import TAGS_MIN_WIDTH, _truncated
 
     place = _place("bench-01", comment="rack A", tags={"board": "imx8", "site": "lab1"})
@@ -434,24 +434,28 @@ async def test_tags_shrink_before_any_column_is_dropped() -> None:
         drop_width: int | None = None
         for available in range(200, 20, -1):
             keys = table._visible_columns(rows, available)
-            if "tags" not in keys:
+            if "comment" not in keys:
                 drop_width = available
-                # Tags goes first: everything else is still standing.
-                assert "comment" in keys and "changed" in keys and "user" in keys
+                # Comment is the first column to go, and Tags outlives it:
+                # what dropping Comment frees goes back to the Tags cells.
+                assert "tags" in keys
                 break
             if table._tags_width is not None:
                 cuts.append(table._tags_width)
 
         assert drop_width is not None
-        assert cuts  # the column shrinks over a range of widths before it goes
-        assert cuts[0] > cuts[-1] == TAGS_MIN_WIDTH
+        assert cuts  # Tags is cut over a range of widths before Comment goes
+        assert cuts[0] > cuts[-1] >= TAGS_MIN_WIDTH
 
         cell = _truncated(table._cell_values(place, [], None, 0.0)["tags"], cuts[-1])
-        assert str(cell) == full[: cuts[-1]]
+        assert str(cell) == full[: cuts[-1]].rstrip()
         assert "\u2026" not in str(cell)
+        # A cut landing on the separator leaves no trailing blank behind.
+        on_space = _truncated(table._cell_values(place, [], None, 0.0)["tags"], 11)
+        assert str(on_space) == "board=imx8"
 
 
-async def test_tags_is_the_first_column_dropped_and_comes_back_on_widening() -> None:
+async def test_columns_drop_in_priority_order_and_come_back_on_widening() -> None:
     store = _store(
         *(
             _place(
@@ -476,15 +480,15 @@ async def test_tags_is_the_first_column_dropped_and_comes_back_on_widening() -> 
             labels = _labels(table)
             dropped += [
                 key
-                for key in ("Tags", "Comment", "Changed", "User")
+                for key in ("Comment", "Tags", "Changed", "User")
                 if key not in labels and key not in dropped
             ]
             for protected in ("M", "Name", "S", "Capabilities"):
                 assert protected in labels, (width, labels)
-        # Columns leave in priority order, Tags first, and at least Tags
-        # and Comment are gone by the narrowest width tried.
-        assert dropped == ["Tags", "Comment", "Changed", "User"][: len(dropped)]
-        assert dropped[:2] == ["Tags", "Comment"]
+        # Columns leave in priority order, Comment first, and Tags
+        # outlives it: at 80 columns the tour still has tags to point at.
+        assert dropped == ["Comment", "Tags", "Changed", "User"][: len(dropped)]
+        assert dropped[0] == "Comment"
 
         await pilot.resize_terminal(200, 10)
         await pilot.pause()
