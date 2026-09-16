@@ -28,6 +28,11 @@ def test_help_text_describes_the_tags_column_and_not_dynamic_ones() -> None:
     assert "tag columns" not in TAB_TABLE_REFERENCE
 
 
+def test_help_text_explains_dimmed_and_first_dropped_shared_pairs() -> None:
+    assert "the same on every place are dimmed" in TAB_TABLE_REFERENCE
+    assert "first to be hidden when the terminal is narrow" in TAB_TABLE_REFERENCE
+
+
 def test_help_text_covers_operations_prose() -> None:
     for phrase in ("mark then verb", "filter", "get a bench"):
         assert phrase in TAB_OPERATIONS

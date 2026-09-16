@@ -219,6 +219,20 @@ async def test_tags_column_survives_the_default_terminal() -> None:
         assert str(table.get_cell("bench-01", "tags")).startswith("board=am62x")
 
 
+@pytest.mark.parametrize("size", [(60, 24), (80, 24), (120, 24)])
+async def test_tour_tag_pairs_read_the_same_at_every_width(size: tuple[int, int]) -> None:
+    """No pair is shared by all six benches, so the tour's Tags column has
+    nothing to dim away and nothing to hide early: board, the pair step 1
+    points at, leads every row at every width the tour is written for."""
+    app = TourApp()
+    async with app.run_test(size=size) as pilot:
+        await _ready(app, pilot)
+        table = app.screen_stack[0].query_one(DeviceTable)
+        assert not any(slot.constant for slot in table._tag_layout.slots)
+        assert str(table.get_cell("bench-01", "tags")).startswith("board=am62x")
+        assert str(table.get_cell("bench-02", "tags")).startswith("board=stm32m")
+
+
 @pytest.mark.parametrize("size", [(120, 40), (100, 30)])
 async def test_welcome_card_then_a_spotlit_step_card(size: tuple[int, int]) -> None:
     app = TourApp()

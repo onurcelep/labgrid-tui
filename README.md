@@ -96,8 +96,11 @@ power and SSH resources for `labgrid-exporter`, and `places.sh` runs the
 
 A place carries a free-form tags dict (`labgrid-client -p NAME set-tags
 board=imx8 env=dev site=lab1`) and labgrid-tui shows it in one Tags
-column, sorted `key=value` pairs, the way labgrid-client prints it. Tag
-with whatever your lab sorts by; there is no fixed schema.
+column of `key=value` pairs. Each key gets a fixed slot, sized over the
+whole fleet, so the same key sits at the same column on every row; a pair
+every place shares is dimmed and is the first to go when the terminal
+runs out of room. Tag with whatever your lab sorts by; there is no fixed
+schema.
 
 </details>
 

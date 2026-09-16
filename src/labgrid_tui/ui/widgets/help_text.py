@@ -112,7 +112,9 @@ green = online, red = offline, `?` = unknown class.
 Narrow terminals drop columns lowest-priority first (comment, tags,
 changed, then user) to keep m/name/s/capabilities visible. Tags are cut
 short rather than dropped for as long as the column fits, and `h`/`l`
-scroll whatever remains.
+scroll whatever remains. Tag pairs sit in fixed columns so the same key
+lines up on every row; pairs that are the same on every place are dimmed,
+and are the first to be hidden when the terminal is narrow.
 """
 
 TAB_OPERATIONS = """\
