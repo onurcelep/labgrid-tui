@@ -10,6 +10,8 @@ exposes and what `labgrid-client` already does.
 labgrid-tui is an independent, third-party project. It is not affiliated
 with or endorsed by the labgrid project or its maintainers.
 
+![labgrid-tui walking through a lab: the fleet table, a command overlay and the activity log](https://github.com/onurcelep/labgrid-tui/releases/download/v0.2.1/labgrid-tui-v0.2.1.gif)
+
 ## At a glance
 
 - **Live fleet view**: places, resources, holders and reservations from
