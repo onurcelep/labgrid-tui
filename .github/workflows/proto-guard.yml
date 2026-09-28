@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   diff:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest migrates to new LTS images on GitHub's schedule.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -19,7 +20,7 @@ jobs:
       VENDORED: src/labgrid_tui/coordinator/proto/labgrid-coordinator.proto
       UPSTREAM_PATH: labgrid/remote/proto/labgrid-coordinator.proto
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Resolve master to a sha and fetch the proto at that sha, so the diff and
       # the sha reported next to it describe the same upstream tree even when
