@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # setup-uv publishes no major tag after v7, so the version is an
       # exact pin and moves by hand.
       - uses: astral-sh/setup-uv@v10.2.0
@@ -34,7 +34,7 @@ jobs:
         ports:
           - 20408:20408
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           # checks saves a cache under an identical key, so the upload from

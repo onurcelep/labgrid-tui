@@ -20,7 +20,7 @@ jobs:
       VENDORED: src/labgrid_tui/coordinator/proto/labgrid-coordinator.proto
       UPSTREAM_PATH: labgrid/remote/proto/labgrid-coordinator.proto
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Resolve master to a sha and fetch the proto at that sha, so the diff and
       # the sha reported next to it describe the same upstream tree even when
