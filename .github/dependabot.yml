@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # The workflows pin actions by major tag and, where no major tag is
+  # published, by exact version or commit. Nothing but this keeps those
+  # pins moving. Grouped so a month's bumps arrive as one PR.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
