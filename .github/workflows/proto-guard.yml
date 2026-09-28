@@ -4,13 +4,92 @@ on:
     - cron: "0 6 * * 1"  # weekly, monday 06:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   diff:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      LABEL: proto-drift
+      VENDORED: src/labgrid_tui/coordinator/proto/labgrid-coordinator.proto
+      UPSTREAM_PATH: labgrid/remote/proto/labgrid-coordinator.proto
     steps:
       - uses: actions/checkout@v4
-      - name: diff vendored proto against upstream master
+
+      # Resolve master to a sha and fetch the proto at that sha, so the diff and
+      # the sha reported next to it describe the same upstream tree even when
+      # master moves while the job runs.
+      - name: resolve upstream master
         run: |
-          curl -fsSL https://raw.githubusercontent.com/labgrid-project/labgrid/master/labgrid/remote/proto/labgrid-coordinator.proto \
+          sha=$(gh api repos/labgrid-project/labgrid/commits/master --jq .sha)
+          echo "sha=$sha" >> "$GITHUB_ENV"
+
+      - name: fetch upstream proto
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/labgrid-project/labgrid/$sha/$UPSTREAM_PATH" \
             -o /tmp/upstream.proto
-          diff -u src/labgrid_tui/coordinator/proto/labgrid-coordinator.proto /tmp/upstream.proto
+
+      - name: diff vendored proto against upstream
+        run: |
+          set +e
+          diff -u "$VENDORED" /tmp/upstream.proto > /tmp/drift.diff
+          rc=$?
+          set -e
+          # diff exits 0 identical, 1 differs, 2 trouble. Only trouble is a guard
+          # failure: drift is reported as an issue, so a red job always means the
+          # guard itself could not run.
+          case "$rc" in
+            0) echo "drift=false" >> "$GITHUB_ENV" ;;
+            1) echo "drift=true" >> "$GITHUB_ENV" ;;
+            *) echo "diff failed with exit code $rc" >&2; exit 1 ;;
+          esac
+
+      - name: report drift
+        run: |
+          gh label create "$LABEL" --force \
+            --color d93f0b \
+            --description "Vendored proto has drifted from upstream labgrid"
+          open=$(gh issue list --label "$LABEL" --state open --limit 1 \
+            --json number --jq '.[0].number // empty')
+
+          if [ "$drift" = false ]; then
+            if [ -n "$open" ]; then
+              gh issue comment "$open" \
+                --body "Resolved: the vendored proto matches upstream labgrid at \`$sha\`."
+              gh issue close "$open"
+            fi
+            exit 0
+          fi
+
+          if [ -n "$open" ]; then
+            echo "drift already reported in #$open"
+            exit 0
+          fi
+
+          {
+            printf 'The vendored coordinator proto no longer matches upstream labgrid at `%s`.\n\n' "$sha"
+            printf 'Diff, vendored against upstream:\n\n```diff\n'
+            head -n 200 /tmp/drift.diff
+            if [ "$(wc -l < /tmp/drift.diff)" -gt 200 ]; then
+              printf '\n... truncated, run the diff locally for the rest\n'
+            fi
+            printf '```\n\nTo re-vendor:\n\n```sh\n'
+            printf 'curl -fsSL https://raw.githubusercontent.com/labgrid-project/labgrid/%s/%s \\\n' \
+              "$sha" "$UPSTREAM_PATH"
+            printf '  -o %s\n' "$VENDORED"
+            printf 'echo %s > src/labgrid_tui/coordinator/proto/UPSTREAM\n' "$sha"
+            printf './scripts/generate-stubs.sh\n'
+            printf '```\n\n'
+            printf 'The sha in `src/labgrid_tui/coordinator/proto/NOTICE` needs the same update.\n\n'
+            printf 'This issue closes itself once the vendored copy matches upstream again.\n'
+          } > /tmp/body.md
+
+          gh issue create --label "$LABEL" \
+            --title "Vendored coordinator proto has drifted from upstream (${sha:0:12})" \
+            --body-file /tmp/body.md
