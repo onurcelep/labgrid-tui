@@ -11,11 +11,14 @@ concurrency:
 
 jobs:
   checks:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest migrates to new LTS images on GitHub's schedule.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v6
+      # setup-uv publishes no major tag after v7, so the version is an
+      # exact pin and moves by hand.
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
@@ -23,7 +26,7 @@ jobs:
       - run: uv run pytest
 
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       coordinator:
@@ -31,8 +34,12 @@ jobs:
         ports:
           - 20408:20408
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          # checks saves a cache under an identical key, so the upload from
+          # here is redundant. Restoring is unaffected.
+          save-cache: false
       - run: uv sync
       - run: uv run pytest -m integration -v
         env:
