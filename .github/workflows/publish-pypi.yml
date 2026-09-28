@@ -15,7 +15,7 @@ jobs:
     # Pinned: ubuntu-latest migrates to new LTS images on GitHub's schedule.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # hatch-vcs derives the version from the tag
       # setup-uv publishes no major tag after v7, so the version is an
