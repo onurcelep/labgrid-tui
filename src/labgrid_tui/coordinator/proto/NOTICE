@@ -1,6 +1,6 @@
 labgrid-coordinator.proto is an unmodified copy of the coordinator protocol
 definition from the labgrid project (https://github.com/labgrid-project/labgrid),
-taken from: 1627e7df508bc275400e35d3a315cbd1f792c888
+taken from: 179219c9c7edd8279bcbef3c31127e507b221ce4
 
 It is licensed under the GNU Lesser General Public License, version 2.1 or
 later; the licence text is in LICENSE.labgrid at the repository root. The
