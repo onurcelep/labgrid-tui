@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0  # hatch-vcs derives the version from the tag
       # setup-uv publishes no major tag after v7, so the version is an
       # exact pin and moves by hand.
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           # The auto default already skips caching on tag pushes; this
           # covers workflow_dispatch too, where a release build is too
@@ -45,4 +45,4 @@ jobs:
           path: dist/
       # Pinned by commit, not the release/v1 branch: this job holds
       # id-token: write. Dependabot reads the version comment to bump it.
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3

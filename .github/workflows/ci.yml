@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v7
       # setup-uv publishes no major tag after v7, so the version is an
       # exact pin and moves by hand.
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: uv sync
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
@@ -35,7 +35,7 @@ jobs:
           - 20408:20408
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           # checks saves a cache under an identical key, so the upload from
           # here is redundant. Restoring is unaffected.
