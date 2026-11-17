@@ -198,9 +198,9 @@ class DetailOverlay(ModalScreen[None]):
             return
         try:
             title = self.query_one("#detail-title", Static)
+            body = self.query_one("#detail-body", Static)
         except NoMatches:
             return  # fleet event raced our own mount
-        body = self.query_one("#detail-body", Static)
 
         place = store.places.get(self.place_name)
         if place is None:
